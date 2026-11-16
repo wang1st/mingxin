@@ -391,22 +391,23 @@ private fun HomeScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text("AI 费曼研习", color = GoldText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                letterSpacing = 2.sp)
-            Spacer(Modifier.height(6.dp))
             Text(
-                "你来讲佛法，AI 做一个爱提问的学生。",
-                fontSize = 17.sp, lineHeight = 25.sp, color = Ink70
+                "选题研习",
+                fontFamily = Serif, fontSize = 22.sp, lineHeight = 28.sp,
+                fontWeight = FontWeight.Bold, color = Ink
             )
+            Spacer(Modifier.height(2.dp))
+            Text("你来讲佛法，AI 做爱提问的学生", fontSize = 14.sp, color = Ink70, maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
         }
 
         if (!hasKey) {
             item {
-                Surface(color = Vermilion12, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = Vermilion12, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -437,11 +438,6 @@ private fun HomeScreen(
         }
 
         item {
-            Spacer(Modifier.height(4.dp))
-            Text("选题研习", fontFamily = Serif, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
-        }
-
-        item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 QuestionBank.sutras.forEach { name ->
                     val selected = name == sutra
@@ -468,7 +464,7 @@ private fun HomeScreen(
                 border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onPickGroup(group) }
             ) {
                 Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -563,73 +559,26 @@ private fun DifficultyDots(level: Int, tint: Color = Jade) {
 /*  Lesson: one question hero, alternating voices, pinned input        */
 /* ------------------------------------------------------------------ */
 
-private val STAGE_STEPS = listOf("初讲", "追问", "明辨", "再讲")
 private fun stageIndex(stage: String): Int = when (stage) {
     "INTRO" -> 0; "ASK" -> 1; "REVIEW" -> 2; "REWRITE" -> 3; else -> 4
 }
 
 @Composable
-private fun StageStepper(stage: String) {
-    val current = stageIndex(stage)
+private fun StageLabel(stage: String, answered: Int) {
+    val label = when (stage) {
+        "INTRO" -> "第一步 · 初讲"
+        "ASK" -> "第二步 · 追问 ${(answered + 1).coerceAtMost(3)}/3"
+        "REVIEW" -> "第三步 · 明辨"
+        "REWRITE" -> "第四步 · 再讲一次"
+        else -> "研习完成"
+    }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        STAGE_STEPS.forEachIndexed { i, label ->
-            val done = i < current || current >= 4
-            val active = i == current && current < 4
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                Box(
-                    Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                done -> Jade
-                                active -> Color.Transparent
-                                else -> Color.Transparent
-                            }
-                        )
-                        .border(
-                            width = if (active) 1.5.dp else 1.dp,
-                            color = when {
-                                done -> Jade
-                                active -> Jade
-                                else -> Ink12
-                            },
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (done) {
-                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                    } else {
-                        Text(
-                            "${i + 1}",
-                            fontSize = 11.sp,
-                            color = if (active) Jade else Ink70
-                        )
-                    }
-                }
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    label, fontSize = 12.sp, maxLines = 1,
-                    color = when {
-                        done || active -> Jade
-                        else -> Ink70
-                    },
-                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
-            if (i < STAGE_STEPS.lastIndex) {
-                Box(
-                    Modifier
-                        .weight(0.5f)
-                        .height(1.dp)
-                        .background(if (i < current) Jade else Ink12)
-                )
-            }
-        }
+        Text(label, color = GoldText, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            maxLines = 1, modifier = Modifier.weight(1f))
+        DifficultyDots(stageIndex(stage).coerceIn(0, 4) + 1)
     }
     HorizontalDivider(color = Ink12, thickness = 0.5.dp)
 }
@@ -674,23 +623,40 @@ private fun QuestionHero(lesson: Lesson) {
 }
 
 @Composable
-private fun StudentCard(text: String, onSpeak: () -> Unit) {
-    Column(
+private fun RoleAvatar(char: String, bg: Color) {
+    Box(
         Modifier
-            .fillMaxWidth(0.92f)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Jade10)
-            .padding(14.dp)
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(bg),
+        contentAlignment = Alignment.Center
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.AutoStories, contentDescription = null, tint = Jade, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(7.dp))
-            Text("善问 · AI 学生", color = Jade, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
-            IconButton(onClick = onSpeak, modifier = Modifier.size(44.dp)) {
-                Icon(Icons.Default.VolumeUp, contentDescription = "朗读", tint = Jade, modifier = Modifier.size(18.dp))
+        Text(char, color = Color.White, fontSize = 13.sp, fontFamily = Serif, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun StudentCard(text: String, onSpeak: () -> Unit) {
+    Row {
+        RoleAvatar("善", Jade)
+        Spacer(Modifier.width(8.dp))
+        Column(
+            Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Jade10)
+                .padding(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AutoStories, contentDescription = null, tint = Jade, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("善问 · AI 学生", color = Jade, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                IconButton(onClick = onSpeak, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Default.VolumeUp, contentDescription = "朗读", tint = Jade, modifier = Modifier.size(18.dp))
+                }
             }
+            Text(text, color = Ink, lineHeight = 24.sp, fontSize = 16.sp)
         }
-        Text(text, color = Ink, lineHeight = 24.sp, fontSize = 16.sp)
     }
 }
 
@@ -699,7 +665,7 @@ private fun TutorCard(text: String) {
     Column(
         Modifier
             .fillMaxWidth(0.92f)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(Gold12)
             .padding(14.dp)
     ) {
@@ -715,11 +681,12 @@ private fun TutorCard(text: String) {
 
 @Composable
 private fun UserBubble(text: String) {
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Spacer(Modifier.weight(0.16f))
         Column(
             Modifier
-                .fillMaxWidth(0.88f)
-                .clip(RoundedCornerShape(14.dp))
+                .weight(0.76f)
+                .clip(RoundedCornerShape(12.dp))
                 .background(Ink8)
                 .padding(14.dp)
         ) {
@@ -727,6 +694,8 @@ private fun UserBubble(text: String) {
             Spacer(Modifier.height(4.dp))
             Text(text, color = Ink, lineHeight = 23.sp, fontSize = 15.sp)
         }
+        Spacer(Modifier.width(8.dp))
+        RoleAvatar("我", Ink)
     }
 }
 
@@ -757,7 +726,7 @@ private fun LessonScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        StageStepper(lesson.stage)
+        StageLabel(lesson.stage, lesson.dialogue.size)
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
@@ -802,7 +771,7 @@ private fun LessonScreen(
         }
         if (editable) {
             if (error.isNotBlank()) {
-                Surface(color = Vermilion12, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = Vermilion12, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Text(
                         error, color = Vermilion, fontSize = 13.sp, lineHeight = 19.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -827,11 +796,29 @@ private fun LessonScreen(
                             onClick = { selectedOption = i }
                         )
                     }
+                    OptionRow(
+                        index = -1, text = "以上都不是，我有不同想法",
+                        selected = selectedOption == lesson.currentOptions.size, enabled = !busy,
+                        onClick = { selectedOption = lesson.currentOptions.size }
+                    )
+                    val escape = selectedOption == lesson.currentOptions.size
+                    if (escape) {
+                        OutlinedTextField(
+                            value = input, onValueChange = { input = it },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+                            minLines = 2, maxLines = 5,
+                            enabled = !busy,
+                            placeholder = { Text("用你自己的话说……", color = Ink70, fontSize = 14.sp) }
+                        )
+                    }
                     Button(
-                        onClick = { if (selectedOption in lesson.currentOptions.indices) onSend(lesson.currentOptions[selectedOption]) },
-                        enabled = selectedOption >= 0 && !busy,
+                        onClick = {
+                            if (escape) onSend(input)
+                            else if (selectedOption in lesson.currentOptions.indices) onSend(lesson.currentOptions[selectedOption])
+                        },
+                        enabled = !busy && (if (escape) input.isNotBlank() else selectedOption >= 0),
                         modifier = Modifier.fillMaxWidth().height(44.dp),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         if (busy) {
                             CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -851,7 +838,7 @@ private fun LessonScreen(
                     OutlinedButton(
                         onClick = voice, enabled = !busy,
                         modifier = Modifier.height(44.dp),
-                        shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Ink12)
+                        shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
                     ) {
                         Icon(Icons.Default.Mic, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(5.dp))
@@ -862,7 +849,7 @@ private fun LessonScreen(
                         onClick = { onSend(input) },
                         enabled = input.isNotBlank() && !busy,
                         modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         if (busy) {
                             CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -883,7 +870,7 @@ private fun OptionRow(
 ) {
     Surface(
         color = if (selected) Jade10 else Color.White,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) Jade else Ink12),
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
     ) {
@@ -899,10 +886,10 @@ private fun OptionRow(
                     .border(1.5.dp, if (selected) Jade else Ink12, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                if (selected) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                } else {
-                    Text("${index + 1}", fontSize = 12.sp, color = Ink70)
+                when {
+                    selected -> Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                    index < 0 -> Icon(Icons.Default.Edit, contentDescription = null, tint = Ink70, modifier = Modifier.size(12.dp))
+                    else -> Text("${index + 1}", fontSize = 12.sp, color = Ink70)
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -918,7 +905,7 @@ private fun EvaluationCard(jsonText: String) {
         Text("评价未能解析", color = Vermilion, fontSize = 13.sp)
         return
     }
-    Surface(color = Color.White, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Ink12)) {
+    Surface(color = Color.White, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf("义理准确" to "accuracy", "逻辑自洽" to "logic", "表达清晰" to "clarity", "生活应用" to "application")
                 .forEach { (label, key) ->
@@ -1027,14 +1014,14 @@ private fun SettingsScreen(
         item {
             Button(
                 onClick = save, enabled = draft.isNotBlank(), modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(12.dp)
             ) { Text("保存", maxLines = 1) }
         }
         if (hasKey) {
             item {
                 OutlinedButton(
                     onClick = delete, modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Vermilion)
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Vermilion)
                 ) { Text("删除密钥", color = Vermilion, maxLines = 1) }
             }
         }
