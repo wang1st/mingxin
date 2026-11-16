@@ -57,7 +57,6 @@ private val Gold = Color(0xFF9E793E)
 private val Vermilion = Color(0xFFB4432F)
 
 private val Ink70 = Ink.copy(alpha = 0.70f)
-private val Ink70 = Ink.copy(alpha = 0.70f)
 private val GoldText = Color(0xFF84652F)
 private val Ink12 = Ink.copy(alpha = 0.12f)
 private val Ink8 = Ink.copy(alpha = 0.08f)
