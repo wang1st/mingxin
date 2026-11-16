@@ -153,6 +153,16 @@ class MainActivity : ComponentActivity() {
 
     private fun bankRef(): String = Tutors.bankRef(QuestionBank.byId(current.questionId))
 
+    private fun parseChoice(raw: String): Pair<String, List<String>> {
+        val j = JSONObject(raw)
+        val q = j.optString("question").trim()
+        require(q.isNotBlank()) { "AI 没有返回有效问题，请重试。" }
+        val arr = j.optJSONArray("options")
+        val opts = if (arr == null) emptyList()
+            else (0 until arr.length()).map { arr.optString(it).trim() }.filter { it.isNotBlank() }
+        return q to opts
+    }
+
     private fun send(input: String) {
         if (busy || input.isBlank()) return
         val key = secrets.read()
@@ -167,25 +177,25 @@ class MainActivity : ComponentActivity() {
                 when (current.stage) {
                     "INTRO" -> {
                         val next = current.copy(firstExplanation = input, updatedAt = System.currentTimeMillis())
-                        val question = client.chat(
-                            key = key, system = Tutors.student,
+                        val (question, options) = parseChoice(client.chat(
+                            key = key, system = Tutors.studentChoice,
                             input = Tutors.transcript(next) + "\n" + bankRef() +
-                                "\n这是首次讲解，请提出第1个关键追问。",
-                            maxTokens = 220
-                        )
-                        current = next.copy(stage = "ASK", currentQuestion = question)
+                                "\n这是首次讲解，请提出第1个关键追问（选择题形式）。",
+                            json = true, maxTokens = 480
+                        ))
+                        current = next.copy(stage = "ASK", currentQuestion = question, currentOptions = options)
                     }
                     "ASK" -> {
-                        val addition = QA(current.currentQuestion, input)
+                        val addition = QA(current.currentQuestion, input, current.currentOptions)
                         val next = current.copy(dialogue = current.dialogue + addition, updatedAt = System.currentTimeMillis())
                         if (next.dialogue.size < 3) {
-                            val question = client.chat(
-                                key = key, system = Tutors.student,
+                            val (question, options) = parseChoice(client.chat(
+                                key = key, system = Tutors.studentChoice,
                                 input = Tutors.transcript(next) + "\n" + bankRef() +
-                                    "\n请提出第${next.dialogue.size + 1}个追问，不要重复前面的问题。",
-                                maxTokens = 240
-                            )
-                            current = next.copy(currentQuestion = question)
+                                    "\n请提出第${next.dialogue.size + 1}个追问（选择题形式），不要重复前面的问题。",
+                                json = true, maxTokens = 480
+                            ))
+                            current = next.copy(currentQuestion = question, currentOptions = options)
                         } else {
                             val judgement = client.chat(
                                 key = key, system = Tutors.evaluator,
@@ -388,10 +398,10 @@ private fun HomeScreen(
             Text("AI 费曼研习", color = GoldText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 letterSpacing = 2.sp)
             Spacer(Modifier.height(6.dp))
-            Text("你来讲佛法", fontFamily = Serif, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Ink)
-            Text("AI 做一个爱提问的学生", fontFamily = Serif, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Jade)
-            Spacer(Modifier.height(10.dp))
-            Text("以讲促学，以问明理。讲得明白，才是真懂。", color = Ink70, fontSize = 14.sp)
+            Text(
+                "你来讲佛法，AI 做一个爱提问的学生。",
+                fontSize = 17.sp, lineHeight = 25.sp, color = Ink70
+            )
         }
 
         if (!hasKey) {
@@ -507,7 +517,7 @@ private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
         item {
             Text(
                 "${group.sutra} · ${group.topic}",
-                fontFamily = Serif, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink
+                fontFamily = Serif, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink
             )
             Text("选一道题，用自己的话先讲给 AI 学生听", color = Ink70, fontSize = 13.sp,
                 modifier = Modifier.padding(top = 4.dp))
@@ -728,6 +738,7 @@ private fun LessonScreen(
     readAloud: (String) -> Unit
 ) {
     var input by remember(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
+    var selectedOption by remember(lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf(-1) }
     LaunchedEffect(speechText) {
         if (speechText.isNotBlank()) {
             input = (input + " " + speechText).trim()
@@ -735,6 +746,7 @@ private fun LessonScreen(
         }
     }
     val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
+    val choiceMode = lesson.stage == "ASK" && lesson.currentOptions.isNotEmpty()
     val sendLabel = when (lesson.stage) {
         "INTRO" -> "请提问"; "ASK" -> "作答"; else -> "提交"
     }
@@ -806,6 +818,28 @@ private fun LessonScreen(
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (choiceMode) {
+                    Text("选一个最接近你想法的回答", color = Ink70, fontSize = 13.sp, maxLines = 1)
+                    lesson.currentOptions.forEachIndexed { i, opt ->
+                        OptionRow(
+                            index = i, text = opt,
+                            selected = selectedOption == i, enabled = !busy,
+                            onClick = { selectedOption = i }
+                        )
+                    }
+                    Button(
+                        onClick = { if (selectedOption in lesson.currentOptions.indices) onSend(lesson.currentOptions[selectedOption]) },
+                        enabled = selectedOption >= 0 && !busy,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("作答", fontSize = 15.sp, maxLines = 1)
+                        }
+                    }
+                } else {
                 OutlinedTextField(
                     value = input, onValueChange = { input = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
@@ -837,7 +871,42 @@ private fun LessonScreen(
                         }
                     }
                 }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun OptionRow(
+    index: Int, text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit
+) {
+    Surface(
+        color = if (selected) Jade10 else Color.White,
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) Jade else Ink12),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) Jade else Color.Transparent)
+                    .border(1.5.dp, if (selected) Jade else Ink12, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (selected) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                } else {
+                    Text("${index + 1}", fontSize = 12.sp, color = Ink70)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(text, fontSize = 15.sp, lineHeight = 22.sp, color = Ink, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -932,7 +1001,7 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("DeepSeek API", fontFamily = Serif, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("DeepSeek API", fontFamily = Serif, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
             Spacer(Modifier.height(4.dp))
             Text(
                 if (hasKey) "状态：已保存加密密钥" else "状态：尚未配置",

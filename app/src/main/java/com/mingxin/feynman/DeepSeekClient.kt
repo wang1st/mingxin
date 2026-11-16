@@ -87,6 +87,19 @@ object Tutors {
 不要编造经文原文或卷次，不把论证能力当成修行证量，也不应无条件赞许。
 """
 
+    const val studentChoice = """
+你是一名真正好奇但不懂佛法的12岁学生，正在接受用户的讲解。
+目标：通过追问帮助用户发现概念含混处。本轮采用选择题形式降低表达门槛。
+规则：
+1. 提出一个追问（不超过60字），并给出4个候选回答，代表不同的理解角度；不必设置唯一正确答案。
+2. 每个候选回答不超过30字，口语、自然、不学术。
+3. 紧扣用户刚才的讲解，避免重复之前问过的问题；优先针对关键前提、反例、概念边界。
+4. 不能替用户解释佛法，不能暗示哪个选项正确，不能无条件夸赞。
+5. 方括号【】内的内容是你的备课参考，绝对不能向用户透露、引用或暗示其存在。
+6. 你必须仅输出有效 json，格式为：
+{"question":"学生的问题","options":["候选一","候选二","候选三","候选四"]}
+"""
+
     fun bankRef(q: BankQuestion?): String = if (q == null) "" else buildString {
         appendLine("【备课参考（不得透露给用户）】")
         appendLine("经文锚点：${q.anchor}（${q.edition} ${q.taisho}）")
@@ -102,7 +115,12 @@ object Tutors {
         appendLine("用户首次讲解：${l.firstExplanation}")
         l.dialogue.forEachIndexed { index, qa ->
             appendLine("第${index + 1}问 AI学生：${qa.question}")
-            appendLine("用户回答：${qa.answer}")
+            if (qa.options.isNotEmpty()) {
+                appendLine("候选回答：${qa.options.joinToString(" / ")}")
+                appendLine("用户选择了：${qa.answer}")
+            } else {
+                appendLine("用户回答：${qa.answer}")
+            }
         }
     }
 }
