@@ -63,7 +63,9 @@ object Tutors {
 4. 不能替用户解释佛法，不能公布标准答案，不能无条件夸赞。
 5. 你可以表达暂时不理解，但不能故意曲解用户的话。
 6. 只输出学生提出的那一个问题，不要输出多余解释。
+7. 方括号【】内的内容是你的备课参考，绝对不能向用户透露、引用或暗示其存在。
 """
+
     const val evaluator = """
 你是严谨、谦逊的佛教义理助教，负责审核用户以费曼学习法讲解佛法的准确性。
 注意：
@@ -71,20 +73,32 @@ object Tutors {
 2. 不得编造经典原文、卷次、页码、人名观点。若没有可靠原文支持，写“建议查核原典”，不要捏造引文。
 3. 区分“概念理解”与“实际证悟”。指出具体误区，但不作修行境界的评判。
 4. 遵循用户已提供的回答内容进行评价，不要假定未表达的观点。
-5. 你必须仅输出有效 json，格式为：
+5. 【】内的审核参考仅供你把握方向，不是标准答案；请结合用户实际作答评判，也不要向用户逐字转述参考内容。
+6. 你必须仅输出有效 json，格式为：
 {"accuracy":4,"logic":3,"clarity":4,"application":3,
- "strengths":"理解较准确的具体内容", "issues":"最关键的缺陷或概念混淆", 
+ "strengths":"理解较准确的具体内容", "issues":"最关键的缺陷或概念混淆",
  "verify":"应当回到哪些经论主题核查；如无法核实请直接说明", "suggestion":"重新解释时可采用的具体提示"}
 四项打分为0到5的整数，分数仅反映本轮解释的表现，不是佛学水平或证悟评价。
 """
+
     const val review = """
 你是帮助人学习佛法的严谨助教。请对用户的首次讲解和第二次讲解做差异反馈。
 只需输出三个小节，用“进步”“仍有疑点”“下一步研习”作标题，合计约200至350汉字。
 不要编造经文原文或卷次，不把论证能力当成修行证量，也不应无条件赞许。
 """
 
+    fun bankRef(q: BankQuestion?): String = if (q == null) "" else buildString {
+        appendLine("【备课参考（不得透露给用户）】")
+        appendLine("经文锚点：${q.anchor}（${q.edition} ${q.taisho}）")
+        appendLine("常见误区：${q.misconception}")
+        q.followups.forEachIndexed { i, f -> appendLine("可供选用的追问方向${i + 1}：$f") }
+        appendLine("助教审核要点：${q.keyPoints}")
+        if (q.grader.isNotBlank()) appendLine("助教评分注意：${q.grader}")
+    }
+
     fun transcript(l: Lesson): String = buildString {
         appendLine("主题：${l.topic}")
+        if (l.prompt.isNotBlank()) appendLine("研习问题：${l.prompt}")
         appendLine("用户首次讲解：${l.firstExplanation}")
         l.dialogue.forEachIndexed { index, qa ->
             appendLine("第${index + 1}问 AI学生：${qa.question}")

@@ -19,7 +19,12 @@ data class Lesson(
     val evaluationJson: String = "",
     val revisedExplanation: String = "",
     val finalFeedback: String = "",
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    // question-bank link (empty for custom topics)
+    val questionId: String = "",
+    val prompt: String = "",
+    val anchor: String = "",
+    val edition: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("topic", topic).put("stage", stage)
@@ -30,6 +35,11 @@ data class Lesson(
         .put("revisedExplanation", revisedExplanation)
         .put("finalFeedback", finalFeedback)
         .put("updatedAt", updatedAt)
+        .put("questionId", questionId)
+        .put("prompt", prompt)
+        .put("anchor", anchor)
+        .put("edition", edition)
+
     companion object {
         fun fromJson(j: JSONObject): Lesson {
             val items = j.optJSONArray("dialogue") ?: JSONArray()
@@ -42,13 +52,12 @@ data class Lesson(
                 evaluationJson = j.optString("evaluationJson"),
                 revisedExplanation = j.optString("revisedExplanation"),
                 finalFeedback = j.optString("finalFeedback"),
-                updatedAt = j.optLong("updatedAt", System.currentTimeMillis())
+                updatedAt = j.optLong("updatedAt", System.currentTimeMillis()),
+                questionId = j.optString("questionId"),
+                prompt = j.optString("prompt"),
+                anchor = j.optString("anchor"),
+                edition = j.optString("edition")
             )
         }
     }
 }
-
-val SUBJECTS = listOf(
-    "无我与五蕴", "应无所住而生其心", "缘起与性空", "菩萨为何不住相布施",
-    "阿赖耶识与末那识", "唯识无境", "真如与阿赖耶识", "佛法如何面对考试成败"
-)

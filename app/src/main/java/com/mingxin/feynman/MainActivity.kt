@@ -11,13 +11,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -26,7 +29,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,10 +47,24 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Ink = Color(0xFF203D35)
+/* ------------------------------------------------------------------ */
+/*  One palette, four named colors; every tint is derived from them.   */
+/* ------------------------------------------------------------------ */
+private val Paper = Color(0xFFF6F3EA)
+private val Ink = Color(0xFF20362E)
 private val Jade = Color(0xFF3B7965)
-private val Paper = Color(0xFFF8F5EE)
 private val Gold = Color(0xFF9E793E)
+private val Vermilion = Color(0xFFB4432F)
+
+private val Ink70 = Ink.copy(alpha = 0.70f)
+private val Ink50 = Ink.copy(alpha = 0.50f)
+private val Ink12 = Ink.copy(alpha = 0.12f)
+private val Ink8 = Ink.copy(alpha = 0.08f)
+private val Jade10 = Jade.copy(alpha = 0.10f)
+private val Gold12 = Gold.copy(alpha = 0.12f)
+private val Vermilion12 = Vermilion.copy(alpha = 0.12f)
+
+private val Serif = FontFamily.Serif
 
 class MainActivity : ComponentActivity() {
     private val prefs by lazy { getSharedPreferences("mingxin_lesson", MODE_PRIVATE) }
@@ -63,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        QuestionBank.load(this)
         hasApiKey = secrets.hasKey()
         current = runCatching { Lesson.fromJson(JSONObject(prefs.getString("active", "{}") ?: "{}")) }.getOrDefault(Lesson())
         history = runCatching {
@@ -75,17 +95,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(
                 primary = Jade, onPrimary = Color.White, background = Paper,
-                surface = Color.White, onSurface = Ink, secondary = Gold
+                surface = Color.White, onSurface = Ink, secondary = Gold,
+                error = Vermilion
             )) {
                 MainUI(
                     page = page, lesson = current, history = history, busy = busy,
                     error = error, hasKey = hasApiKey,
                     onNavigate = { page = it; error = "" },
-                    onChooseTopic = { topic ->
-                        current = Lesson(topic = topic)
-                        persistActive()
-                        page = "lesson"
-                    },
+                    onStartQuestion = ::startQuestion,
+                    onCustomTopic = ::startCustom,
                     onResume = { page = "lesson" },
                     onSend = ::send,
                     onRevise = {
@@ -108,6 +126,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startQuestion(q: BankQuestion) {
+        current = Lesson(
+            topic = "${q.sutra} · ${q.topic}",
+            questionId = q.id, prompt = q.question,
+            anchor = q.anchor, edition = q.edition
+        )
+        persistActive()
+        page = "lesson"
+    }
+
+    private fun startCustom(topic: String) {
+        current = Lesson(topic = topic)
+        persistActive()
+        page = "lesson"
+    }
+
     private fun persistActive() {
         prefs.edit().putString("active", current.toJson().toString()).apply()
     }
@@ -116,6 +150,8 @@ class MainActivity : ComponentActivity() {
         val arr = JSONArray().apply { history.take(30).forEach { put(it.toJson()) } }
         prefs.edit().putString("completed", arr.toString()).apply()
     }
+
+    private fun bankRef(): String = Tutors.bankRef(QuestionBank.byId(current.questionId))
 
     private fun send(input: String) {
         if (busy || input.isBlank()) return
@@ -133,7 +169,8 @@ class MainActivity : ComponentActivity() {
                         val next = current.copy(firstExplanation = input, updatedAt = System.currentTimeMillis())
                         val question = client.chat(
                             key = key, system = Tutors.student,
-                            input = Tutors.transcript(next) + "\n这是首次讲解，请提出第1个关键追问。",
+                            input = Tutors.transcript(next) + "\n" + bankRef() +
+                                "\n这是首次讲解，请提出第1个关键追问。",
                             maxTokens = 220
                         )
                         current = next.copy(stage = "ASK", currentQuestion = question)
@@ -144,14 +181,16 @@ class MainActivity : ComponentActivity() {
                         if (next.dialogue.size < 3) {
                             val question = client.chat(
                                 key = key, system = Tutors.student,
-                                input = Tutors.transcript(next) + "\n请提出第${next.dialogue.size + 1}个追问，不要重复前面的问题。",
+                                input = Tutors.transcript(next) + "\n" + bankRef() +
+                                    "\n请提出第${next.dialogue.size + 1}个追问，不要重复前面的问题。",
                                 maxTokens = 240
                             )
                             current = next.copy(currentQuestion = question)
                         } else {
                             val judgement = client.chat(
                                 key = key, system = Tutors.evaluator,
-                                input = Tutors.transcript(next) + "\n现在请按指定 json 结构评价本次讲解。",
+                                input = Tutors.transcript(next) + "\n" + bankRef() +
+                                    "\n现在请按指定 json 结构评价本次讲解。",
                                 json = true, maxTokens = 1600
                             )
                             JSONObject(judgement) // only move to next stage for valid JSON
@@ -170,7 +209,7 @@ class MainActivity : ComponentActivity() {
                             stage = "DONE", revisedExplanation = input,
                             finalFeedback = response, updatedAt = System.currentTimeMillis()
                         )
-                        history = listOf(current) + history.filterNot { it.topic == current.topic && it.updatedAt == current.updatedAt }
+                        history = listOf(current) + history.filterNot { it.questionId == current.questionId && it.questionId.isNotBlank() }
                         persistHistory()
                     }
                 }
@@ -191,6 +230,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Scaffold, navigation and home                                     */
+/* ------------------------------------------------------------------ */
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainUI(
@@ -201,7 +244,8 @@ private fun MainUI(
     error: String,
     hasKey: Boolean,
     onNavigate: (String) -> Unit,
-    onChooseTopic: (String) -> Unit,
+    onStartQuestion: (BankQuestion) -> Unit,
+    onCustomTopic: (String) -> Unit,
     onResume: () -> Unit,
     onSend: (String) -> Unit,
     onRevise: () -> Unit,
@@ -210,9 +254,11 @@ private fun MainUI(
     onSpeech: (String) -> Unit,
     onOpenHistory: (Lesson) -> Unit
 ) {
-    var customTopic by remember { mutableStateOf("") }
+    var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var keyDraft by remember { mutableStateOf("") }
     var speechText by remember { mutableStateOf("") }
+    var customDraft by remember { mutableStateOf("") }
+    var showCustom by remember { mutableStateOf(false) }
     val activity = androidx.compose.ui.platform.LocalContext.current as Activity
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -232,26 +278,57 @@ private fun MainUI(
         }
     }
 
+    if (showCustom) {
+        AlertDialog(
+            onDismissRequest = { showCustom = false },
+            title = { Text("自定义课题", fontFamily = Serif) },
+            text = {
+                OutlinedTextField(
+                    value = customDraft, onValueChange = { customDraft = it },
+                    modifier = Modifier.fillMaxWidth(), maxLines = 2,
+                    placeholder = { Text("例如：因果与自由意志") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = customDraft.isNotBlank(),
+                    onClick = { showCustom = false; onCustomTopic(customDraft.trim()); customDraft = "" }
+                ) { Text("开始", color = Jade) }
+            },
+            dismissButton = { TextButton(onClick = { showCustom = false }) { Text("取消", color = Ink50) } }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (page == "lesson") "费曼课堂" else "明心 · 佛法研习", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        if (page == "lesson") "费曼课堂" else "明心",
+                        fontFamily = Serif, fontWeight = FontWeight.Bold
+                    )
+                },
                 navigationIcon = {
-                    if (page == "lesson") IconButton(onClick = { onNavigate("home") }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回首页")
+                    if (page == "lesson" || page == "topic") IconButton(onClick = { onNavigate("home") }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Paper)
             )
         },
         bottomBar = {
-            if (page != "lesson") NavigationBar(containerColor = Color.White) {
-                listOf(Triple("home", "研习", Icons.Default.Home),
-                       Triple("history", "笔记", Icons.Default.MenuBook),
-                       Triple("settings", "设置", Icons.Default.Settings)).forEach { item ->
-                    NavigationBarItem(selected = page == item.first, onClick = { onNavigate(item.first) },
+            if (page != "lesson") NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                listOf(
+                    Triple("home", "研习", Icons.Default.Home),
+                    Triple("history", "笔记", Icons.Default.MenuBook),
+                    Triple("settings", "设置", Icons.Default.Settings)
+                ).forEach { item ->
+                    NavigationBarItem(
+                        selected = page == item.first, onClick = { onNavigate(item.first) },
                         icon = { Icon(item.third, contentDescription = item.second) },
-                        label = { Text(item.second) })
+                        label = { Text(item.second, maxLines = 1) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Jade, selectedTextColor = Jade, indicatorColor = Jade10)
+                    )
                 }
             }
         },
@@ -259,13 +336,31 @@ private fun MainUI(
     ) { inset ->
         Column(Modifier.fillMaxSize().padding(inset)) {
             if (error.isNotBlank()) {
-                Surface(color = Color(0xFFFFECE8), modifier = Modifier.fillMaxWidth()) {
-                    Text("提示：$error", color = Color(0xFF9E3C25), modifier = Modifier.padding(12.dp), fontSize = 13.sp)
+                Surface(color = Vermilion12, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        error, color = Vermilion, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                        fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
             when (page) {
-                "home" -> HomeScreen(lesson, hasKey, customTopic, { customTopic = it }, onChooseTopic, onResume, onNavigate)
-                "lesson" -> LessonScreen(lesson, busy, onSend, onRevise, startVoice, speechText, { speechText = it }, onSpeech, onNavigate)
+                "home" -> HomeScreen(
+                    active = lesson, hasKey = hasKey,
+                    onResume = onResume, onSettings = { onNavigate("settings") },
+                    onPickGroup = { selectedGroup = it; onNavigate("topic") },
+                    onRandom = { QuestionBank.randomQuestion().let(onStartQuestion) },
+                    onCustom = { showCustom = true }
+                )
+                "topic" -> if (selectedGroup != null) {
+                    TopicScreen(selectedGroup!!, onStartQuestion)
+                } else {
+                    LaunchedEffect(Unit) { onNavigate("home") }
+                    Spacer(Modifier.fillMaxSize())
+                }
+                "lesson" -> LessonScreen(
+                    lesson, busy, onSend, onRevise, startVoice,
+                    speechText, { speechText = "" }, onSpeech
+                )
                 "history" -> HistoryScreen(history, onOpenHistory)
                 "settings" -> SettingsScreen(hasKey, keyDraft, { keyDraft = it },
                     { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
@@ -276,148 +371,464 @@ private fun MainUI(
 
 @Composable
 private fun HomeScreen(
-    active: Lesson, hasKey: Boolean, customTopic: String, changeTopic: (String) -> Unit,
-    start: (String) -> Unit, resume: () -> Unit, navigate: (String) -> Unit
+    active: Lesson, hasKey: Boolean,
+    onResume: () -> Unit, onSettings: () -> Unit,
+    onPickGroup: (TopicGroup) -> Unit,
+    onRandom: () -> Unit, onCustom: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("以讲促学，以问明理", fontSize = 29.sp, color = Ink, fontWeight = FontWeight.Bold)
-        Text("你来讲佛法，AI 做一个爱提问的学生。", color = Color.Gray)
+    var sutra by remember { mutableStateOf(QuestionBank.sutras.firstOrNull().orEmpty()) }
+    val topics = remember(sutra) { QuestionBank.topicsOf(sutra) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Text("AI 费曼研习", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                letterSpacing = 2.sp)
+            Spacer(Modifier.height(6.dp))
+            Text("你来讲佛法", fontFamily = Serif, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("AI 做一个爱提问的学生", fontFamily = Serif, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Jade)
+            Spacer(Modifier.height(10.dp))
+            Text("以讲促学，以问明理。讲得明白，才是真懂。", color = Ink50, fontSize = 14.sp)
+        }
+
         if (!hasKey) {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF6E7))) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("首次使用", fontWeight = FontWeight.Bold)
-                    Text("请先在设置中填入自己的 DeepSeek API Key。调用费用由你的 DeepSeek 账户承担。", fontSize = 13.sp)
-                    OutlinedButton(onClick = { navigate("settings") }) { Text("去配置 API") }
+            item {
+                Surface(color = Vermilion12, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("尚未配置 API Key", color = Vermilion, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                        TextButton(onClick = onSettings) { Text("去设置", color = Vermilion, maxLines = 1) }
+                    }
                 }
             }
         }
+
         if (active.topic.isNotBlank() && active.stage != "DONE") {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFE5EFE9))) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("继续上次课堂", color = Jade, fontWeight = FontWeight.Bold)
-                    Text(active.topic, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                    Button(onClick = resume) { Text("继续学习") }
+            item {
+                Button(
+                    onClick = onResume, modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Jade)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("继续", fontSize = 16.sp, maxLines = 1)
+                        Spacer(Modifier.width(10.dp))
+                        Text("·", color = Color.White.copy(alpha = 0.6f))
+                        Spacer(Modifier.width(10.dp))
+                        Text(active.topic, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }
-        Text("选择一个佛法概念", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-        SUBJECTS.forEachIndexed { idx, topic ->
+
+        item {
+            Spacer(Modifier.height(4.dp))
+            Text("选题研习", fontFamily = Serif, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Ink)
+        }
+
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QuestionBank.sutras.forEach { name ->
+                    val selected = name == sutra
+                    Surface(
+                        color = if (selected) Jade else Color.Transparent,
+                        shape = RoundedCornerShape(20.dp),
+                        border = if (selected) null else BorderStroke(1.dp, Ink12),
+                        modifier = Modifier.clickable { sutra = name }
+                    ) {
+                        Text(
+                            name,
+                            color = if (selected) Color.White else Ink,
+                            fontSize = 14.sp, maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        items(topics, key = { "${it.sutra}-${it.topic}" }) { group ->
             Surface(
-                color = Color.White, shape = MaterialTheme.shapes.medium,
-                border = BorderStroke(1.dp, Color(0xFFE5E6DF)), modifier = Modifier.fillMaxWidth().clickable { start(topic) }
+                color = Color.White, shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onPickGroup(group) }
             ) {
-                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("%02d".format(idx + 1), color = Gold, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(12.dp))
-                    Text(topic, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Jade)
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        group.topic, modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("${group.questions.size} 题", color = Ink50, fontSize = 12.sp, maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Ink50, modifier = Modifier.size(16.dp))
                 }
             }
         }
-        OutlinedTextField(value = customTopic, onValueChange = changeTopic, label = { Text("或者输入自定义主题") },
-            modifier = Modifier.fillMaxWidth(), maxLines = 2)
-        Button(onClick = { start(customTopic.trim()) }, enabled = customTopic.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-            Text("开始自定义研习")
+
+        item {
+            Spacer(Modifier.height(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onRandom, modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade)
+                ) {
+                    Icon(Icons.Default.Shuffle, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("随机一题", color = Jade, maxLines = 1)
+                }
+                OutlinedButton(
+                    onClick = onCustom, modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("自定义课题", color = Ink, maxLines = 1)
+                }
+            }
         }
-        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                "${group.sutra} · ${group.topic}",
+                fontFamily = Serif, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink
+            )
+            Text("选一道题，用自己的话先讲给 AI 学生听", color = Ink50, fontSize = 13.sp,
+                modifier = Modifier.padding(top = 4.dp))
+            Spacer(Modifier.height(4.dp))
+        }
+        items(group.questions, key = { it.id }) { q ->
+            Surface(
+                color = Color.White, shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onStart(q) }
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(q.id, color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Spacer(Modifier.weight(1f))
+                        DifficultyDots(q.difficulty)
+                    }
+                    Text(q.question, fontSize = 16.sp, lineHeight = 24.sp, color = Ink)
+                    if (q.anchor.isNotBlank()) {
+                        Text("锚点 · ${q.anchor}", color = Ink50, fontSize = 12.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DifficultyDots(level: Int, tint: Color = Jade) {
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        (1..5).forEach { i ->
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(if (i <= level) tint else Ink12)
+            )
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Lesson: one question hero, alternating voices, pinned input        */
+/* ------------------------------------------------------------------ */
+
+private val STAGE_STEPS = listOf("初讲", "追问", "明辨", "再讲")
+private fun stageIndex(stage: String): Int = when (stage) {
+    "INTRO" -> 0; "ASK" -> 1; "REVIEW" -> 2; "REWRITE" -> 3; else -> 4
+}
+
+@Composable
+private fun StageStepper(stage: String) {
+    val current = stageIndex(stage)
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        STAGE_STEPS.forEachIndexed { i, label ->
+            val done = i < current || current >= 4
+            val active = i == current && current < 4
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Box(
+                    Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                done -> Jade
+                                active -> Color.Transparent
+                                else -> Color.Transparent
+                            }
+                        )
+                        .border(
+                            width = if (active) 1.5.dp else 1.dp,
+                            color = when {
+                                done -> Jade
+                                active -> Jade
+                                else -> Ink12
+                            },
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (done) {
+                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                    } else {
+                        Text(
+                            "${i + 1}",
+                            fontSize = 11.sp,
+                            color = if (active) Jade else Ink50
+                        )
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label, fontSize = 12.sp, maxLines = 1,
+                    color = when {
+                        done || active -> Jade
+                        else -> Ink50
+                    },
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
+            if (i < STAGE_STEPS.lastIndex) {
+                Box(
+                    Modifier
+                        .weight(0.5f)
+                        .height(1.dp)
+                        .background(if (i < current) Jade else Ink12)
+                )
+            }
+        }
+    }
+    HorizontalDivider(color = Ink12, thickness = 0.5.dp)
+}
+
+@Composable
+private fun QuestionHero(lesson: Lesson) {
+    val compact = stageIndex(lesson.stage) > 0
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                lesson.topic,
+                color = Gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (lesson.prompt.isNotBlank()) {
+            Text(
+                lesson.prompt,
+                fontFamily = Serif,
+                fontSize = if (compact) 18.sp else 21.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = if (compact) 26.sp else 30.sp,
+                color = Ink
+            )
+        } else {
+            Text(
+                lesson.topic,
+                fontFamily = Serif,
+                fontSize = if (compact) 18.sp else 21.sp,
+                fontWeight = FontWeight.Bold, color = Ink
+            )
+        }
+        if (!compact) {
+            Text(
+                if (lesson.stage == "INTRO") "不要查资料，也不必追求完美。第一次表达越真实，越容易发现盲点。"
+                else "紧扣这个问题来讲。",
+                color = Ink50, fontSize = 13.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun StudentCard(text: String, onSpeak: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth(0.92f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Jade10)
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.AutoStories, contentDescription = null, tint = Jade, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text("善问 · AI 学生", color = Jade, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = onSpeak, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.VolumeUp, contentDescription = "朗读", tint = Jade, modifier = Modifier.size(17.dp))
+            }
+        }
+        Text(text, color = Ink, lineHeight = 24.sp, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun TutorCard(text: String) {
+    Column(
+        Modifier
+            .fillMaxWidth(0.92f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Gold12)
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.MenuBook, contentDescription = null, tint = Gold, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text("明辨 · AI 助教", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(text, color = Ink, lineHeight = 24.sp, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun UserBubble(text: String) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Column(
+            Modifier
+                .fillMaxWidth(0.88f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Ink8)
+                .padding(14.dp)
+        ) {
+            Text("我的讲解", color = Ink50, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Spacer(Modifier.height(4.dp))
+            Text(text, color = Ink, lineHeight = 23.sp, fontSize = 15.sp)
+        }
     }
 }
 
 @Composable
 private fun LessonScreen(
-    lesson: Lesson, busy: Boolean, onSend: (String) -> Unit, onRevise: () -> Unit,
+    lesson: Lesson, busy: Boolean,
+    onSend: (String) -> Unit, onRevise: () -> Unit,
     voice: () -> Unit, speechText: String, consumeSpeech: (String) -> Unit,
-    readAloud: (String) -> Unit, navigate: (String) -> Unit
+    readAloud: (String) -> Unit
 ) {
-    var input by remember(lesson.topic, lesson.stage, lesson.currentQuestion) { mutableStateOf("") }
+    var input by remember(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
     LaunchedEffect(speechText) {
         if (speechText.isNotBlank()) {
             input = (input + " " + speechText).trim()
             consumeSpeech("")
         }
     }
-    val isEditable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
-    val title = when (lesson.stage) {
-        "INTRO" -> "第一步 · 你先讲"
-        "ASK" -> "第二步 · 学生追问 ${lesson.dialogue.size + 1}/3"
-        "REVIEW" -> "第三步 · 助教明辨"
-        "REWRITE" -> "第四步 · 再讲一次"
-        else -> "研习已完成"
+    val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
+    val sendLabel = when (lesson.stage) {
+        "INTRO" -> "请提问"; "ASK" -> "作答"; else -> "提交"
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(lesson.topic, fontSize = 24.sp, color = Ink, fontWeight = FontWeight.Bold)
-        Text(title, fontSize = 15.sp, color = Jade, fontWeight = FontWeight.SemiBold)
-        when (lesson.stage) {
-            "INTRO" -> {
-                RoleCard("善问 · AI 学生", "老师，请您像讲给一个12岁的孩子听那样，用自己的话解释『${lesson.topic}』。", true, readAloud)
-                Text("不要查资料，也不必追求完美。第一次表达越真实，越容易发现盲点。", color = Color.Gray, fontSize = 13.sp)
-            }
-            "ASK" -> {
-                if (lesson.dialogue.isNotEmpty()) {
-                    Text("你此前已经回答了 ${lesson.dialogue.size} 个问题。", color = Color.Gray, fontSize = 13.sp)
-                }
-                RoleCard("善问 · AI 学生", lesson.currentQuestion, true, readAloud)
-            }
-            "REVIEW" -> {
-                RoleCard("明辨 · AI 助教", "我根据你的第一次讲解和三轮追问做了分析。评分只用于跟踪本轮学习表现。")
-                EvaluationCard(lesson.evaluationJson)
-                Button(onClick = onRevise, modifier = Modifier.fillMaxWidth()) { Text("我来重新讲解") }
-            }
-            "REWRITE" -> {
-                RoleCard("明辨 · AI 助教", "现在请不用照抄分析，用你自己的话重新讲明白『${lesson.topic}』。")
-                EvaluationCard(lesson.evaluationJson)
-            }
-            "DONE" -> {
-                RoleCard("明辨 · AI 助教", lesson.finalFeedback, false, readAloud)
-                Text("修订后的讲解", fontWeight = FontWeight.Bold)
-                Text(lesson.revisedExplanation)
-                OutlinedButton(onClick = { navigate("home") }, modifier = Modifier.fillMaxWidth()) { Text("返回研习首页") }
-            }
-        }
-        if (isEditable) {
-            OutlinedTextField(
-                value = input, onValueChange = { input = it },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 155.dp), minLines = 5, maxLines = 12,
-                enabled = !busy,
-                placeholder = { Text(if (lesson.stage == "INTRO") "我认为这个概念的意思是……" else "老师，我的理解是……") }
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = voice, enabled = !busy) {
-                    Icon(Icons.Default.Mic, contentDescription = null)
-                    Spacer(Modifier.width(5.dp)); Text("语音输入")
-                }
-                Button(onClick = { onSend(input) }, enabled = input.isNotBlank() && !busy,
-                    modifier = Modifier.weight(1f)) {
-                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                    else Text(when (lesson.stage) { "INTRO" -> "讲完了，请提问"; "ASK" -> "回答完成"; else -> "提交第二次讲解" })
-                }
-            }
-        }
-        if (lesson.dialogue.isNotEmpty() && lesson.stage != "ASK") {
-            HorizontalDivider()
-            Text("本轮课堂问答记录", fontWeight = FontWeight.SemiBold)
-            lesson.dialogue.forEachIndexed { i, qa ->
-                Text("第${i + 1}问：${qa.question}", color = Jade, fontWeight = FontWeight.SemiBold)
-                Text(qa.answer, fontSize = 14.sp)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
+    val inputHint = when (lesson.stage) {
+        "INTRO" -> "我认为这个问题的意思是……"
+        "ASK" -> "我的回答是……"
+        else -> "这一次，我这样讲……"
     }
-}
 
-@Composable
-private fun RoleCard(label: String, message: String, allowRead: Boolean = false, readAloud: (String) -> Unit = {}) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF0EA))) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoStories, contentDescription = null, tint = Jade, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(label, color = Jade, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (allowRead) IconButton(onClick = { readAloud(message) }) {
-                    Icon(Icons.Default.VolumeUp, contentDescription = "朗读", tint = Jade)
+    Column(Modifier.fillMaxSize()) {
+        StageStepper(lesson.stage)
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item { QuestionHero(lesson) }
+            if (lesson.firstExplanation.isNotBlank()) item { UserBubble(lesson.firstExplanation) }
+            itemsIndexed(lesson.dialogue, key = { i, _ -> "qa$i" }) { _, qa ->
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StudentCard(qa.question) { readAloud(qa.question) }
+                    UserBubble(qa.answer)
                 }
             }
-            Text(message, color = Ink, lineHeight = 25.sp)
+            when (lesson.stage) {
+                "ASK" -> item(key = "current") {
+                    StudentCard(lesson.currentQuestion) { readAloud(lesson.currentQuestion) }
+                }
+                "REVIEW" -> {
+                    item(key = "tutor") { TutorCard("你的初讲与三轮回答我都看完了。下面是义理、逻辑、表达与应用的审核，评分只反映本轮表现。") }
+                    item(key = "eval") { EvaluationCard(lesson.evaluationJson) }
+                    item(key = "revise") {
+                        Button(
+                            onClick = onRevise, modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("重新讲解", fontSize = 15.sp, maxLines = 1) }
+                    }
+                }
+                "REWRITE" -> item(key = "tutor2") {
+                    TutorCard("现在不看分析，用你自己的话把这个问题重新讲明白。")
+                }
+                "DONE" -> {
+                    item(key = "feedback") { TutorCard(lesson.finalFeedback) }
+                    item(key = "revised") { UserBubble(lesson.revisedExplanation) }
+                    item(key = "note") {
+                        Text(
+                            "研习记录已存入笔记。理解能力不等于证悟境界，AI 评价不能替代查阅原典与师长指导。",
+                            color = Ink50, fontSize = 12.sp, lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+        }
+        if (editable) {
+            HorizontalDivider(color = Ink12, thickness = 0.5.dp)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = input, onValueChange = { input = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
+                    minLines = 3, maxLines = 6,
+                    enabled = !busy,
+                    placeholder = { Text(inputHint, color = Ink50, fontSize = 14.sp) }
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = voice, enabled = !busy,
+                        modifier = Modifier.height(44.dp),
+                        shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Ink12)
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("语音", color = Ink, fontSize = 14.sp, maxLines = 1)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Button(
+                        onClick = { onSend(input) },
+                        enabled = input.isNotBlank() && !busy,
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text(sendLabel, fontSize = 15.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -425,51 +836,75 @@ private fun RoleCard(label: String, message: String, allowRead: Boolean = false,
 @Composable
 private fun EvaluationCard(jsonText: String) {
     val j = runCatching { JSONObject(jsonText) }.getOrNull()
-    if (j == null) { Text("评价未能解析：$jsonText"); return }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf("义理准确" to "accuracy", "逻辑自洽" to "logic", "表达清晰" to "clarity", "生活应用" to "application")
-                    .forEach { (label, key) ->
-                        val score = j.optInt(key).coerceIn(0, 5)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(label, modifier = Modifier.width(86.dp), fontSize = 13.sp)
-                            LinearProgressIndicator(progress = { score / 5f }, modifier = Modifier.weight(1f).height(8.dp), color = Jade)
-                            Spacer(Modifier.width(8.dp))
-                            Text("$score/5", fontSize = 12.sp)
-                        }
+    if (j == null) {
+        Text("评价未能解析", color = Vermilion, fontSize = 13.sp)
+        return
+    }
+    Surface(color = Color.White, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Ink12)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf("义理准确" to "accuracy", "逻辑自洽" to "logic", "表达清晰" to "clarity", "生活应用" to "application")
+                .forEach { (label, key) ->
+                    val score = j.optInt(key).coerceIn(0, 5)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, modifier = Modifier.width(72.dp), fontSize = 13.sp, color = Ink70, maxLines = 1)
+                        DifficultyDots(score)
+                        Spacer(Modifier.weight(1f))
+                        Text("$score / 5", fontSize = 12.sp, color = Ink50, maxLines = 1)
                     }
-            }
+                }
+            HorizontalDivider(color = Ink12, thickness = 0.5.dp)
+            listOf("已经理解的" to "strengths", "需要澄清的" to "issues", "建议核查经论" to "verify", "再讲一次的提示" to "suggestion")
+                .forEach { (heading, key) ->
+                    Column {
+                        Text(heading, color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                        Spacer(Modifier.height(3.dp))
+                        Text(j.optString(key).ifBlank { "暂无" }, lineHeight = 22.sp, fontSize = 14.sp, color = Ink)
+                    }
+                }
+            Text("本评价由 AI 生成，仅供参考。", fontSize = 11.sp, color = Ink50)
         }
-        listOf("已经理解的" to "strengths", "需要澄清的" to "issues", "建议核查经论" to "verify", "再讲一次的提示" to "suggestion")
-            .forEach { (heading, key) ->
-                Text(heading, color = Jade, fontWeight = FontWeight.Bold)
-                Text(j.optString(key).ifBlank { "暂无" }, lineHeight = 23.sp)
-            }
-        Text("注意：本评价由 AI 生成，不能替代查阅经典、可靠注疏或老师指导。", fontSize = 12.sp, color = Color.Gray)
     }
 }
+
+/* ------------------------------------------------------------------ */
+/*  History and settings                                              */
+/* ------------------------------------------------------------------ */
 
 @Composable
 private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit) {
     if (history.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
-            Icon(Icons.Default.MenuBook, contentDescription = null, tint = Jade, modifier = Modifier.size(50.dp))
+            Icon(Icons.Default.MenuBook, contentDescription = null, tint = Jade, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(12.dp))
-            Text("尚无研习笔记", fontWeight = FontWeight.Bold)
-            Text("完成一次费曼课堂后，这里会保存你的回答与评估。", fontSize = 13.sp, color = Color.Gray)
+            Text("尚无研习笔记", fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("完成一次费曼课堂后，这里会保存你的回答与评估。", fontSize = 13.sp, color = Ink50)
         }
     } else {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(history) { item ->
-                ElevatedCard(onClick = { open(item) }) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(item.topic, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Text(SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.updatedAt)),
-                            fontSize = 12.sp, color = Color.Gray)
-                        Text(item.revisedExplanation.take(86), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(history, key = { "${it.questionId}-${it.updatedAt}" }) { item ->
+                Surface(
+                    color = Color.White, shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { open(item) }
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(item.topic, fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (item.prompt.isNotBlank()) {
+                            Text(item.prompt, fontSize = 13.sp, color = Ink70,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 19.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.updatedAt)),
+                                fontSize = 12.sp, color = Ink50, modifier = Modifier.weight(1f), maxLines = 1
+                            )
+                            Text("已完成", color = Jade, fontSize = 12.sp, maxLines = 1)
+                        }
                     }
                 }
             }
@@ -482,25 +917,63 @@ private fun SettingsScreen(
     hasKey: Boolean, draft: String, changeDraft: (String) -> Unit, save: () -> Unit, delete: () -> Unit
 ) {
     var visible by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("DeepSeek API", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text(if (hasKey) "状态：已保存加密密钥" else "状态：尚未配置", color = if (hasKey) Jade else Gold)
-        OutlinedTextField(value = draft, onValueChange = changeDraft, modifier = Modifier.fillMaxWidth(), singleLine = true,
-            label = { Text("API Key") },
-            visualTransformation = if (visible) androidx.compose.ui.text.input.VisualTransformation.None
-                else androidx.compose.ui.text.input.PasswordVisualTransformation(),
-            trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(
-                if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = "显示/隐藏密钥") } }
-        )
-        Button(onClick = save, enabled = draft.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("加密保存密钥") }
-        if (hasKey) OutlinedButton(onClick = delete, modifier = Modifier.fillMaxWidth()) { Text("删除本机密钥") }
-        HorizontalDivider()
-        Text("接口地址", fontWeight = FontWeight.SemiBold)
-        Text("https://api.deepseek.com/chat/completions", fontSize = 13.sp)
-        Text("模型：deepseek-flash", color = Jade)
-        Text("隐私与费用", fontWeight = FontWeight.SemiBold)
-        Text("密钥仅存储在本机并由 Android Keystore 加密；学习内容将在请求时发送给 DeepSeek 处理。本 App 没有自建中转服务器，不会替你支付 API 费用。", lineHeight = 23.sp)
-        Text("建议为 API 账户设定充值和费用上限。不要把包含 API Key 的截图或录屏发给他人。", color = Color.Gray, fontSize = 13.sp)
-        Text("语音输入依赖手机安装的系统识别服务，其隐私政策可能与 DeepSeek 不同。", color = Color.Gray, fontSize = 13.sp)
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text("DeepSeek API", fontFamily = Serif, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (hasKey) "状态：已保存加密密钥" else "状态：尚未配置",
+                color = if (hasKey) Jade else Vermilion, fontSize = 13.sp, maxLines = 1
+            )
+        }
+        item {
+            OutlinedTextField(
+                value = draft, onValueChange = changeDraft, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("API Key") },
+                visualTransformation = if (visible) androidx.compose.ui.text.input.VisualTransformation.None
+                    else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { visible = !visible }) {
+                        Icon(
+                            if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "显示或隐藏"
+                        )
+                    }
+                }
+            )
+        }
+        item {
+            Button(
+                onClick = save, enabled = draft.isNotBlank(), modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(10.dp)
+            ) { Text("保存", maxLines = 1) }
+        }
+        if (hasKey) {
+            item {
+                OutlinedButton(
+                    onClick = delete, modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Vermilion)
+                ) { Text("删除密钥", color = Vermilion, maxLines = 1) }
+            }
+        }
+        item {
+            HorizontalDivider(color = Ink12, thickness = 0.5.dp)
+            Spacer(Modifier.height(4.dp))
+            Text("接口与模型", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+            Text("https://api.deepseek.com/chat/completions", fontSize = 13.sp, color = Ink70)
+            Text("模型：deepseek-flash", color = Jade, fontSize = 13.sp, maxLines = 1)
+        }
+        item {
+            Text("隐私与费用", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+            Text(
+                "密钥仅存储在本机并由 Android Keystore 加密；学习内容在请求时发送给 DeepSeek 处理。本 App 没有中转服务器，也不代付 API 费用。建议为账户设置费用上限。",
+                lineHeight = 21.sp, fontSize = 13.sp, color = Ink70
+            )
+            Text("语音输入依赖系统识别服务，其隐私政策与 DeepSeek 无关。", fontSize = 12.sp, color = Ink50)
+        }
     }
 }
