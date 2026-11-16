@@ -18,13 +18,13 @@ jobs:
       - name: Install SDK components
         run: |
           SDK=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
-          yes | $SDK "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          yes | $SDK "platforms;android-37" "build-tools;37.0.0" > /dev/null
 
-      - name: Install Gradle 8.13 (wrapper jar not in repo)
+      - name: Install Gradle 9.9.1 (wrapper jar not in repo)
         run: |
-          curl -sSLo /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.13-bin.zip
+          curl -sSLo /tmp/gradle.zip https://services.gradle.org/distributions/gradle-9.9.1-bin.zip
           unzip -q /tmp/gradle.zip -d /opt
-          ln -s /opt/gradle-8.13/bin/gradle /usr/local/bin/gradle
+          ln -s /opt/gradle-9.9.1/bin/gradle /usr/local/bin/gradle
 
       - name: Build APK
         run: gradle --no-daemon :app:assembleDebug
