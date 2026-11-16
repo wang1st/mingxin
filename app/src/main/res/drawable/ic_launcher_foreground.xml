@@ -1,17 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ensō: a single brushstroke circle, deliberately left open. -->
+<!--
+  抽象佛寺：飞檐殿宇中三尊抽象身相。
+  中尊佛陀（略高、顶有肉髻），左胁阿难，右胁大迦叶。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- 飞檐屋顶 -->
     <path
-        android:pathData="M 85.2 36 A 36 36 0 1 1 54 18"
-        android:strokeWidth="5.5"
-        android:strokeLineCap="round"
-        android:strokeColor="#F6F3EA"
-        android:fillColor="#00000000"/>
+        android:pathData="M 21 41 L 26 33 L 31 39 L 54 21 L 77 39 L 82 33 L 87 41 L 79 45 L 29 45 Z"
+        android:fillColor="#F6F3EA"/>
+    <!-- 横梁 -->
     <path
-        android:pathData="M 88.5 26.5 a 2.6 2.6 0 1 1 0.1 0"
+        android:pathData="M 32 48 L 76 48 L 76 51 L 32 51 Z"
+        android:fillColor="#F6F3EA"/>
+    <!-- 侧柱 -->
+    <path
+        android:pathData="M 31 51 L 34 51 L 34 74 L 31 74 Z"
+        android:fillColor="#F6F3EA"/>
+    <path
+        android:pathData="M 74 51 L 77 51 L 77 74 L 74 74 Z"
+        android:fillColor="#F6F3EA"/>
+    <!-- 中尊：佛陀（肉髻） -->
+    <path
+        android:pathData="M 54 52.8 m -1.1 0 a 1.1 1.1 0 1 0 2.2 0 a 1.1 1.1 0 1 0 -2.2 0"
+        android:fillColor="#F6F3EA"/>
+    <path
+        android:pathData="M 54 57 m -3.3 0 a 3.3 3.3 0 1 0 6.6 0 a 3.3 3.3 0 1 0 -6.6 0"
+        android:fillColor="#F6F3EA"/>
+    <path
+        android:pathData="M 47 74 L 49.5 62 Q 54 58.5 58.5 62 L 61 74 Z"
+        android:fillColor="#F6F3EA"/>
+    <!-- 左胁：阿难 -->
+    <path
+        android:pathData="M 41.5 61 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
+        android:fillColor="#F6F3EA"/>
+    <path
+        android:pathData="M 37 74 L 39 65.5 Q 41.5 62.8 44 65.5 L 46 74 Z"
+        android:fillColor="#F6F3EA"/>
+    <!-- 右胁：大迦叶 -->
+    <path
+        android:pathData="M 66.5 61 m -2.5 0 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0"
+        android:fillColor="#F6F3EA"/>
+    <path
+        android:pathData="M 62 74 L 64 65.5 Q 66.5 62.8 69 65.5 L 71 74 Z"
+        android:fillColor="#F6F3EA"/>
+    <!-- 台基 -->
+    <path
+        android:pathData="M 28 74 L 80 74 L 80 78 L 28 78 Z"
         android:fillColor="#F6F3EA"/>
 </vector>
