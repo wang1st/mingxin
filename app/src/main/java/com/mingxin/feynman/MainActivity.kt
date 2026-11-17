@@ -152,7 +152,8 @@ class MainActivity : ComponentActivity() {
                     onOpenHistory = { selected -> current = selected; page = "lesson" },
                     doubts = doubts,
                     onToggleDoubt = ::toggleDoubt,
-                    onLoop = ::loopBack
+                    onLoop = ::loopBack,
+                    nextUp = nextUp(current.questionId)
                 )
             }
         }
@@ -184,6 +185,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun bankRef(): String = Tutors.bankRef(QuestionBank.byId(current.questionId))
+
+    /** 派题：未练优先、难度递进；exclude 用于课堂内"下一题"排除当前题。 */
+    private fun nextUp(excludeId: String?): BankQuestion? {
+        val practiced = history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
+        return QuestionBank.questions
+            .filter { it.id !in practiced && it.id != excludeId }
+            .minByOrNull { it.difficulty }
+    }
 
     private data class Choice(val done: Boolean, val question: String, val options: List<String>)
 
@@ -362,31 +371,13 @@ private fun MainUI(
     onOpenHistory: (Lesson) -> Unit,
     doubts: List<Doubt>,
     onToggleDoubt: (Doubt) -> Unit,
-    onLoop: (String) -> Unit
+    onLoop: (String) -> Unit,
+    nextUp: BankQuestion?
 ) {
     var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var keyDraft by remember { mutableStateOf("") }
-    var speechText by remember { mutableStateOf("") }
     var customDraft by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
-    val activity = androidx.compose.ui.platform.LocalContext.current as Activity
-    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val recognized = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!recognized.isNullOrBlank()) speechText = recognized
-        }
-    }
-    val startVoice: () -> Unit = {
-        try {
-            speechLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
-                putExtra(RecognizerIntent.EXTRA_PROMPT, "用自己的话讲一讲...")
-            })
-        } catch (_: ActivityNotFoundException) {
-            android.widget.Toast.makeText(activity, "手机上未安装可用的语音识别服务", android.widget.Toast.LENGTH_LONG).show()
-        }
-    }
 
     if (showCustom) {
         AlertDialog(
@@ -419,7 +410,7 @@ private fun MainUI(
                     )
                 },
                 navigationIcon = {
-                    if (page == "lesson" || page == "topic") IconButton(onClick = { onNavigate("home") }) {
+                    if (page == "lesson" || page == "topic" || page == "browse") IconButton(onClick = { onNavigate("home") }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -456,10 +447,13 @@ private fun MainUI(
             }
             when (page) {
                 "home" -> HomeScreen(
-                    active = lesson, hasKey = hasKey, history = history,
+                    active = lesson, hasKey = hasKey, history = history, doubts = doubts,
                     onResume = onResume, onSettings = { onNavigate("settings") },
+                    onBrowse = { onNavigate("browse") },
+                    onStart = onStartQuestion
+                )
+                "browse" -> BrowseScreen(
                     onPickGroup = { selectedGroup = it; onNavigate("topic") },
-                    onStart = onStartQuestion,
                     onCustom = { showCustom = true }
                 )
                 "topic" -> if (selectedGroup != null) {
@@ -469,10 +463,10 @@ private fun MainUI(
                     Spacer(Modifier.fillMaxSize())
                 }
                 "lesson" -> LessonScreen(
-                    lesson, busy, error, speaking, onSend, onRevise, onLoop, startVoice,
-                    speechText, { speechText = "" }, onSpeech
+                    lesson, busy, error, speaking, onSend, onRevise, onLoop, onSpeech,
+                    nextUp = nextUp, onNext = onStartQuestion
                 )
-                "doubts" -> DoubtsScreen(doubts, onToggleDoubt)
+                "doubts" -> DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
                 "history" -> HistoryScreen(history, onOpenHistory)
                 "settings" -> SettingsScreen(hasKey, keyDraft, { keyDraft = it },
                     { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
@@ -483,36 +477,34 @@ private fun MainUI(
 
 @Composable
 private fun HomeScreen(
-    active: Lesson, hasKey: Boolean, history: List<Lesson>,
-    onResume: () -> Unit, onSettings: () -> Unit,
-    onPickGroup: (TopicGroup) -> Unit,
-    onStart: (BankQuestion) -> Unit, onCustom: () -> Unit
+    active: Lesson, hasKey: Boolean, history: List<Lesson>, doubts: List<Doubt>,
+    onResume: () -> Unit, onSettings: () -> Unit, onBrowse: () -> Unit,
+    onStart: (BankQuestion) -> Unit
 ) {
-    var sutra by remember { mutableStateOf(QuestionBank.sutras.firstOrNull().orEmpty()) }
-    val topics = remember(sutra) { QuestionBank.topicsOf(sutra) }
     val practiced = remember(history.size) {
         history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
     }
     var candidateId by rememberSaveable { mutableStateOf("") }
     val candidate = candidateId.takeIf { it.isNotBlank() }
         ?.let { QuestionBank.byId(it) }?.takeIf { it.id !in practiced }
-    val next = candidate
-        ?: QuestionBank.questions.filter { it.id !in practiced }.minByOrNull { it.difficulty }
-        ?: QuestionBank.randomQuestion()
+    val remaining = QuestionBank.questions.filter { it.id !in practiced }
+    val next = candidate ?: remaining.minByOrNull { it.difficulty } ?: QuestionBank.randomQuestion()
+    val dispatch = if (remaining.isNotEmpty()) "依难度递进 · 余 ${remaining.size} 题" else "已全练 · 随机复习"
+    val openDoubts = doubts.count { !it.resolved }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("下一题 · ${next.sutra}", color = GoldText, fontSize = 12.sp,
+                        Text("下一题 · $dispatch", color = GoldText, fontSize = 12.sp,
                             fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
-                            modifier = Modifier.weight(1f), maxLines = 1)
+                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         DifficultyDots(next.difficulty)
                     }
                     Text(next.question, fontFamily = Serif, fontSize = 18.sp, lineHeight = 26.sp,
@@ -522,10 +514,21 @@ private fun HomeScreen(
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Button(
-                        onClick = { onStart(next) }, enabled = !active.topic.isNotBlank() || active.stage == "DONE",
+                        onClick = { onStart(next) },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) { Text("开始研习", fontSize = 16.sp, maxLines = 1) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "换一题",
+                            color = Jade, fontSize = 13.sp, maxLines = 1,
+                            modifier = Modifier.clickable {
+                                val pool = remaining.filter { it.id != next.id }
+                                candidateId = (pool.randomOrNull() ?: QuestionBank.randomQuestion()).id
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -557,15 +560,51 @@ private fun HomeScreen(
 
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("自由选题", fontFamily = Serif, fontSize = 17.sp, lineHeight = 23.sp,
-                    fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
-                if (practiced.isNotEmpty()) {
-                    Text("已练 ${practiced.size} 题", color = Ink70, fontSize = 12.sp, maxLines = 1)
-                }
+                Text(
+                    "已练 ${practiced.size} 题", color = Ink70, fontSize = 13.sp, maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "未决疑点 $openDoubts", color = if (openDoubts > 0) GoldText else Jade,
+                    fontSize = 13.sp, maxLines = 1
+                )
             }
         }
 
         item {
+            Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onBrowse() }) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("自由选题", modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp, maxLines = 1)
+                    Text("心经 · 金刚经 · 楞伽经", color = Ink70, fontSize = 12.sp, maxLines = 1)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
+                        tint = Ink70, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowseScreen(
+    onPickGroup: (TopicGroup) -> Unit, onCustom: () -> Unit
+) {
+    var sutra by remember { mutableStateOf(QuestionBank.sutras.firstOrNull().orEmpty()) }
+    val topics = remember(sutra) { QuestionBank.topicsOf(sutra) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text("自由选题", fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp,
+                fontWeight = FontWeight.Bold, color = Ink)
+            Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 QuestionBank.sutras.forEach { name ->
                     val selected = name == sutra
@@ -575,17 +614,12 @@ private fun HomeScreen(
                         border = if (selected) null else BorderStroke(1.dp, Ink12),
                         modifier = Modifier.clickable { sutra = name }
                     ) {
-                        Text(
-                            name,
-                            color = if (selected) Color.White else Ink,
-                            fontSize = 14.sp, maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
+                        Text(name, color = if (selected) Color.White else Ink, fontSize = 14.sp,
+                            maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                 }
             }
         }
-
         items(topics, key = { "${it.sutra}-${it.topic}" }) { group ->
             Surface(
                 color = Color.White, shape = RoundedCornerShape(12.dp),
@@ -595,41 +629,24 @@ private fun HomeScreen(
                     Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        group.topic, modifier = Modifier.weight(1f),
-                        fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
+                    Text(group.topic, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.width(10.dp))
                     Text("${group.questions.size} 题", color = Ink70, fontSize = 12.sp, maxLines = 1)
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Ink70, modifier = Modifier.size(16.dp))
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
+                        tint = Ink70, modifier = Modifier.size(16.dp))
                 }
             }
         }
-
         item {
-            Spacer(Modifier.height(2.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        val pool = QuestionBank.questions.filter { it.id !in practiced && it.id != next.id }
-                        candidateId = (pool.randomOrNull() ?: QuestionBank.randomQuestion()).id
-                    },
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
-                ) {
-                    Icon(Icons.Default.Shuffle, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("换一题", color = Ink, maxLines = 1)
-                }
-                OutlinedButton(
-                    onClick = onCustom, modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("自定义课题", color = Ink, maxLines = 1)
-                }
+            OutlinedButton(
+                onClick = onCustom, modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("自定义课题", color = Ink, maxLines = 1)
             }
         }
     }
@@ -840,20 +857,12 @@ private fun UserBubble(text: String) {
 private fun LessonScreen(
     lesson: Lesson, busy: Boolean, error: String, speaking: String,
     onSend: (String) -> Unit, onRevise: () -> Unit, onLoop: (String) -> Unit,
-    voice: () -> Unit, speechText: String, consumeSpeech: (String) -> Unit,
-    readAloud: (String) -> Unit
+    readAloud: (String) -> Unit,
+    nextUp: BankQuestion?, onNext: (BankQuestion) -> Unit
 ) {
     var input by rememberSaveable(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
     var selectedOption by rememberSaveable(lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf(-1) }
     val listState = rememberLazyListState()
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(speechText) {
-        if (speechText.isNotBlank()) {
-            input = (input + " " + speechText).trim()
-            consumeSpeech("")
-            focusRequester.requestFocus()
-        }
-    }
     LaunchedEffect(lesson.stage, lesson.currentQuestion, lesson.dialogue.size, lesson.evaluationJson, lesson.finalFeedback) {
         val count = listState.layoutInfo.totalItemsCount
         if (count > 0) listState.animateScrollToItem(count - 1)
@@ -923,6 +932,26 @@ private fun LessonScreen(
                             color = Ink70, fontSize = 12.sp, lineHeight = 18.sp
                         )
                     }
+                    item(key = "nextUp") {
+                        val nq = nextUp
+                        if (nq != null) {
+                            Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("下一题 · ${nq.sutra}", color = GoldText, fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold, maxLines = 1)
+                                    Text(nq.question, fontFamily = Serif, fontSize = 16.sp, lineHeight = 23.sp,
+                                        fontWeight = FontWeight.Bold, color = Ink, maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis)
+                                    Button(
+                                        onClick = { onNext(nq) },
+                                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) { Text("开始研习", fontSize = 15.sp, maxLines = 1) }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -941,6 +970,7 @@ private fun LessonScreen(
                 Modifier
                     .fillMaxWidth()
                     .background(Color.White)
+                    .imePadding()
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -967,12 +997,10 @@ private fun LessonScreen(
                     FreeTextPanel(
                         input = input,
                         onInputChange = { input = it },
-                        voice = voice,
                         busy = busy,
                         sendLabel = sendLabel,
                         inputHint = inputHint,
-                        onSend = onSend,
-                        focusRequester = focusRequester
+                        onSend = onSend
                     )
                 }
             }
@@ -1036,43 +1064,29 @@ private fun ChoicePanel(
 private fun FreeTextPanel(
     input: String,
     onInputChange: (String) -> Unit,
-    voice: () -> Unit,
     busy: Boolean,
     sendLabel: String,
     inputHint: String,
-    onSend: (String) -> Unit,
-    focusRequester: FocusRequester
+    onSend: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = input, onValueChange = onInputChange,
-            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).heightIn(min = 90.dp),
-            minLines = 3, maxLines = 6,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+            minLines = 2, maxLines = 6,
             enabled = !busy,
             placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) }
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(
-                onClick = voice, enabled = !busy,
-                modifier = Modifier.height(44.dp),
-                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
-            ) {
-                Icon(Icons.Default.Mic, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("语音", color = Ink, fontSize = 14.sp, maxLines = 1)
-            }
-            Spacer(Modifier.width(10.dp))
-            Button(
-                onClick = { onSend(input) },
-                enabled = input.isNotBlank() && !busy,
-                modifier = Modifier.weight(1f).height(44.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                if (busy) {
-                    CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                } else {
-                    Text(sendLabel, fontSize = 15.sp, maxLines = 1)
-                }
+        Button(
+            onClick = { onSend(input) },
+            enabled = input.isNotBlank() && !busy,
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (busy) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+            } else {
+                Text(sendLabel, fontSize = 15.sp, maxLines = 1)
             }
         }
     }
@@ -1183,7 +1197,7 @@ private fun EvaluationCard(jsonText: String) {
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit) {
+private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
     val open = doubts.filter { !it.resolved }
     val closed = doubts.filter { it.resolved }
     if (doubts.isEmpty()) {
@@ -1211,7 +1225,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit) {
                 Spacer(Modifier.height(4.dp))
             }
             items(open, key = { "o${it.createdAt}-${it.text.hashCode()}" }) { d ->
-                DoubtCard(d, onToggle)
+                DoubtCard(d, onToggle, onOpen)
             }
             if (closed.isNotEmpty()) {
                 item {
@@ -1219,7 +1233,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit) {
                     Text("已消除 ${closed.size}", color = Ink70, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
                 items(closed, key = { "c${it.createdAt}-${it.text.hashCode()}" }) { d ->
-                    DoubtCard(d, onToggle)
+                    DoubtCard(d, onToggle, onOpen)
                 }
             }
         }
@@ -1227,7 +1241,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit) {
 }
 
 @Composable
-private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit) {
+private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
     Surface(
         color = Color.White, shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, if (d.resolved) Ink12 else Gold.copy(alpha = 0.5f)),
@@ -1250,6 +1264,13 @@ private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit) {
                     "${d.topic} · " + SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(d.createdAt)),
                     fontSize = 12.sp, color = Ink70, maxLines = 1
                 )
+            }
+            val source = QuestionBank.byId(d.questionId)
+            if (source != null) {
+                IconButton(onClick = { onOpen(source) }, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "去研习此题",
+                        tint = Jade, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }
