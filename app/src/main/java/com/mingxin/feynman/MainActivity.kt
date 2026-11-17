@@ -1292,7 +1292,6 @@ private fun EvaluationCard(jsonText: String) {
             Text("本评价由 AI 生成，仅供参考。", fontSize = 11.sp, color = Ink70)
         }
     }
-    }
 }
 
 /* ------------------------------------------------------------------ */
