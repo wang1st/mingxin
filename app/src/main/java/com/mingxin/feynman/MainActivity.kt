@@ -56,8 +56,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -151,6 +153,7 @@ class MainActivity : ComponentActivity() {
                     onSpeech = { phrase -> speak(phrase) },
                     onOpenHistory = { selected -> current = selected; page = "lesson" },
                     doubts = doubts,
+                    onExportNotes = { exportNotes() },
                     onToggleDoubt = ::toggleDoubt,
                     onLoop = ::loopBack,
                     nextUp = nextUp(current.questionId)
@@ -332,6 +335,75 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** 导出全部研习记录为 Markdown，供用户送其他大模型验证。 */
+    private fun exportNotes() {
+        val md = buildNotesMarkdown()
+        val dir = File(cacheDir, "exports").apply { mkdirs() }
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.getDefault()).format(Date())
+        val file = File(dir, "mingxin-notes-$stamp.md")
+        runCatching { file.writeText(md) }.onFailure {
+            error = "导出失败：${it.localizedMessage}"; return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "明心研习笔记 $stamp")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(Intent.createChooser(send, "导出笔记")) }
+            .onFailure { error = "没有可用的分享应用" }
+    }
+
+    private fun buildNotesMarkdown(): String = buildString {
+        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        appendLine("# 明心研习笔记")
+        appendLine("导出时间：${fmt.format(Date())}；共 ${history.size} 节")
+        appendLine()
+        val open = doubts.filter { !it.resolved }
+        val closed = doubts.filter { it.resolved }
+        appendLine("## 疑点（未决 ${open.size} / 已消 ${closed.size}）")
+        appendLine()
+        (open + closed).forEach { d ->
+            appendLine("- [${if (d.resolved) "已消" else "未决"}] ${d.text}（${d.topic}）")
+        }
+        appendLine()
+        appendLine("## 研习记录")
+        history.forEachIndexed { i, l ->
+            appendLine()
+            appendLine("### ${i + 1}. ${l.topic}")
+            appendLine("- 时间：${fmt.format(Date(l.updatedAt))}")
+            if (l.prompt.isNotBlank()) {
+                appendLine("- 研习问题：${l.prompt}")
+                if (l.edition.isNotBlank()) appendLine("- 依据底本：${l.edition}；经文锚点：${l.anchor}")
+            }
+            appendLine("- 我的初讲：${l.firstExplanation}")
+            l.dialogue.forEachIndexed { j, qa ->
+                appendLine("- 追问${j + 1}（善问）：${qa.question}")
+                if (qa.options.isNotEmpty()) {
+                    appendLine("  - 候选：${qa.options.joinToString("；")}")
+                    appendLine("  - 我的选择：${qa.answer}")
+                } else {
+                    appendLine("  - 我的回答：${qa.answer}")
+                }
+            }
+            runCatching { JSONObject(l.evaluationJson) }.getOrNull()?.let { j ->
+                appendLine(
+                    "- 评分（0-5）：义理 ${j.optInt("accuracy")} / 逻辑 ${j.optInt("logic")} / " +
+                        "清晰 ${j.optInt("clarity")} / 应用 ${j.optInt("application")}"
+                )
+                appendLine("- 已经理解的：${j.optString("strengths")}")
+                appendLine("- 需要澄清的：${j.optString("issues")}")
+                appendLine("- 建议核查经论：${j.optString("verify")}")
+                appendLine("- 再讲一次的提示：${j.optString("suggestion")}")
+            }
+            if (l.revisedExplanation.isNotBlank()) appendLine("- 我的重讲：${l.revisedExplanation}")
+            if (l.finalFeedback.isNotBlank()) appendLine("- 助教总结：${l.finalFeedback}")
+        }
+        appendLine()
+        appendLine("> 注：以上问答与评估由 AI（deepseek-flash）生成，义理未经专家校勘，引用请回查原典。")
+    }
+
     private fun speak(text: String) {
         if (text.isBlank()) return
         if (speaking == text) { tts?.stop(); speaking = ""; return }
@@ -372,7 +444,8 @@ private fun MainUI(
     doubts: List<Doubt>,
     onToggleDoubt: (Doubt) -> Unit,
     onLoop: (String) -> Unit,
-    nextUp: BankQuestion?
+    nextUp: BankQuestion?,
+    onExportNotes: () -> Unit
 ) {
     var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var keyDraft by remember { mutableStateOf("") }
@@ -467,7 +540,7 @@ private fun MainUI(
                     nextUp = nextUp, onNext = onStartQuestion
                 )
                 "doubts" -> DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
-                "history" -> HistoryScreen(history, onOpenHistory)
+                "history" -> HistoryScreen(history, onOpenHistory, onExportNotes)
                 "settings" -> SettingsScreen(hasKey, keyDraft, { keyDraft = it },
                     { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
             }
@@ -1219,6 +1292,7 @@ private fun EvaluationCard(jsonText: String) {
             Text("本评价由 AI 生成，仅供参考。", fontSize = 11.sp, color = Ink70)
         }
     }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1310,9 +1384,28 @@ private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit) {
+private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExport: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("研习笔记", fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp,
+                fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+            if (history.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = onExport, modifier = Modifier.height(38.dp),
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, tint = Jade, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("导出", color = Jade, fontSize = 13.sp, maxLines = 1)
+                }
+            }
+        }
     if (history.isEmpty()) {
-        Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        Column(Modifier.fillMaxWidth().weight(1f).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center) {
             Icon(Icons.Default.MenuBook, contentDescription = null, tint = Jade, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(12.dp))
@@ -1321,8 +1414,8 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit) {
         }
     } else {
         LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(history, key = { "${it.questionId}-${it.updatedAt}" }) { item ->
