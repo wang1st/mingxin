@@ -1071,7 +1071,7 @@ private fun LessonScreen(
         else -> "这一次，我这样讲……"
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().imePadding()) {
         StageLabel(lesson.stage, lesson.dialogue.size)
         LazyColumn(
             state = listState,
