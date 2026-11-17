@@ -433,11 +433,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun NavEntry(
     key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
-    page: String, onClick: () -> Unit
+    page: String, modifier: Modifier = Modifier, onClick: () -> Unit
 ) {
     val selected = page == key
     Column(
-        Modifier.weight(1f).clickable(onClick = onClick).padding(vertical = 8.dp),
+        modifier.clickable(onClick = onClick).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(icon, contentDescription = label, tint = if (selected) Jade else Ink70, modifier = Modifier.size(22.dp))
@@ -523,11 +523,11 @@ private fun MainUI(
                         Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        NavEntry("home", "研习", Icons.Default.Home, page) { onNavigate("home") }
-                        NavEntry("doubts", "疑点", Icons.Default.Lightbulb, page) { onNavigate("doubts") }
+                        NavEntry("home", "研习", Icons.Default.Home, page, Modifier.weight(1f)) { onNavigate("home") }
+                        NavEntry("doubts", "疑点", Icons.Default.Lightbulb, page, Modifier.weight(1f)) { onNavigate("doubts") }
                         Spacer(Modifier.width(64.dp))
-                        NavEntry("history", "笔记", Icons.Default.MenuBook, page) { onNavigate("history") }
-                        NavEntry("settings", "设置", Icons.Default.Settings, page) { onNavigate("settings") }
+                        NavEntry("history", "笔记", Icons.Default.MenuBook, page, Modifier.weight(1f)) { onNavigate("history") }
+                        NavEntry("settings", "设置", Icons.Default.Settings, page, Modifier.weight(1f)) { onNavigate("settings") }
                     }
                 }
                 FloatingActionButton(
