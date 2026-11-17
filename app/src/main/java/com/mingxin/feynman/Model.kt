@@ -79,3 +79,27 @@ data class Lesson(
         }
     }
 }
+
+/** 疑点是学习状态机的基本单位：从评估中沉淀，可被消除。 */
+data class Doubt(
+    val text: String,
+    val questionId: String,
+    val topic: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val resolved: Boolean = false,
+    val resolvedAt: Long = 0
+) {
+    fun toJson() = JSONObject()
+        .put("text", text).put("questionId", questionId).put("topic", topic)
+        .put("createdAt", createdAt).put("resolved", resolved).put("resolvedAt", resolvedAt)
+    companion object {
+        fun fromJson(j: JSONObject) = Doubt(
+            text = j.optString("text"),
+            questionId = j.optString("questionId"),
+            topic = j.optString("topic"),
+            createdAt = j.optLong("createdAt", System.currentTimeMillis()),
+            resolved = j.optBoolean("resolved", false),
+            resolvedAt = j.optLong("resolvedAt", 0)
+        )
+    }
+}

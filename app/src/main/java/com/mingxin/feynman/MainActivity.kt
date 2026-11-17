@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
     private var error by mutableStateOf("")
     private var hasApiKey by mutableStateOf(false)
     private var speaking by mutableStateOf("")
+    private var doubts by mutableStateOf(listOf<Doubt>())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,6 +105,10 @@ class MainActivity : ComponentActivity() {
         history = runCatching {
             val arr = JSONArray(prefs.getString("completed", "[]") ?: "[]")
             (0 until arr.length()).map { Lesson.fromJson(arr.getJSONObject(it)) }
+        }.getOrDefault(emptyList())
+        doubts = runCatching {
+            val arr = JSONArray(prefs.getString("doubts", "[]") ?: "[]")
+            (0 until arr.length()).map { Doubt.fromJson(arr.getJSONObject(it)) }
         }.getOrDefault(emptyList())
         tts = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
@@ -144,7 +149,10 @@ class MainActivity : ComponentActivity() {
                     },
                     onDeleteKey = { secrets.delete(); hasApiKey = false },
                     onSpeech = { phrase -> speak(phrase) },
-                    onOpenHistory = { selected -> current = selected; page = "lesson" }
+                    onOpenHistory = { selected -> current = selected; page = "lesson" },
+                    doubts = doubts,
+                    onToggleDoubt = ::toggleDoubt,
+                    onLoop = ::loopBack
                 )
             }
         }
@@ -177,14 +185,79 @@ class MainActivity : ComponentActivity() {
 
     private fun bankRef(): String = Tutors.bankRef(QuestionBank.byId(current.questionId))
 
-    private fun parseChoice(raw: String): Pair<String, List<String>> {
+    private data class Choice(val done: Boolean, val question: String, val options: List<String>)
+
+    private fun parseChoice(raw: String): Choice {
         val j = JSONObject(raw)
+        if (j.optBoolean("done", false)) return Choice(true, "", emptyList())
         val q = j.optString("question").trim()
         require(q.isNotBlank()) { "AI 没有返回有效问题，请重试。" }
         val arr = j.optJSONArray("options")
         val opts = if (arr == null) emptyList()
             else (0 until arr.length()).map { arr.optString(it).trim() }.filter { it.isNotBlank() }
-        return q to opts
+        return Choice(false, q, opts)
+    }
+
+    private fun persistDoubts() {
+        val arr = JSONArray().apply { doubts.take(200).forEach { put(it.toJson()) } }
+        prefs.edit().putString("doubts", arr.toString()).apply()
+    }
+
+    /** 原理4：评估中指出的"需要澄清的"自动沉淀为疑点（去重）。 */
+    private fun saveDoubtFrom(evaluationJson: String, lesson: Lesson) {
+        val issues = runCatching { JSONObject(evaluationJson).optString("issues").trim() }.getOrDefault("")
+        if (issues.isBlank()) return
+        if (doubts.any { it.questionId == lesson.questionId && it.text == issues }) return
+        doubts = listOf(Doubt(issues, lesson.questionId, lesson.topic)) + doubts
+        persistDoubts()
+    }
+
+    fun toggleDoubt(target: Doubt) {
+        doubts = doubts.map {
+            if (it.createdAt == target.createdAt && it.text == target.text)
+                it.copy(resolved = !it.resolved, resolvedAt = if (!it.resolved) System.currentTimeMillis() else 0)
+            else it
+        }
+        persistDoubts()
+    }
+
+    /** 原理3+4：评估完成即沉淀疑点。 */
+    private suspend fun runEvaluator(key: String, next: Lesson): Lesson {
+        val judgement = client.chat(
+            key = key, system = Tutors.evaluator,
+            input = Tutors.transcript(next) + "\n" + bankRef() +
+                "\n现在请按指定 json 结构评价本次讲解。",
+            json = true, maxTokens = 1600
+        )
+        JSONObject(judgement) // only move to next stage for valid JSON
+        saveDoubtFrom(judgement, next)
+        return next.copy(stage = "REVIEW", currentQuestion = "", currentOptions = emptyList(), evaluationJson = judgement)
+    }
+
+    /** 原理：课堂是回路——明辨的薄弱处把用户打回学生面前。 */
+    private fun loopBack(weakPoint: String) {
+        val key = secrets.read()
+        if (key.isNullOrBlank()) { error = "请先配置 API Key"; return }
+        error = ""
+        busy = true
+        scope.launch {
+            try {
+                val c = parseChoice(client.chat(
+                    key = key, system = Tutors.studentChoice,
+                    input = Tutors.transcript(current) + "\n" + bankRef() +
+                        "\n助教指出用户讲解中最薄弱的一处：$weakPoint\n" +
+                        "请只针对这一处，以学生身份提出一个追问（选择题形式）。",
+                    json = true, maxTokens = 480
+                ))
+                current = current.copy(
+                    stage = "ASK", currentQuestion = c.question, currentOptions = c.options,
+                    updatedAt = System.currentTimeMillis()
+                )
+                persistActive()
+            } catch (t: Exception) {
+                error = t.localizedMessage ?: "请求失败，请重试"
+            } finally { busy = false }
+        }
     }
 
     private fun send(input: String) {
@@ -201,34 +274,30 @@ class MainActivity : ComponentActivity() {
                 when (current.stage) {
                     "INTRO" -> {
                         val next = current.copy(firstExplanation = input, updatedAt = System.currentTimeMillis())
-                        val (question, options) = parseChoice(client.chat(
+                        val c = parseChoice(client.chat(
                             key = key, system = Tutors.studentChoice,
                             input = Tutors.transcript(next) + "\n" + bankRef() +
                                 "\n这是首次讲解，请提出第1个关键追问（选择题形式）。",
                             json = true, maxTokens = 480
                         ))
-                        current = next.copy(stage = "ASK", currentQuestion = question, currentOptions = options)
+                        current = if (c.done) runEvaluator(key, next)
+                                  else next.copy(stage = "ASK", currentQuestion = c.question, currentOptions = c.options)
                     }
                     "ASK" -> {
                         val addition = QA(current.currentQuestion, input, current.currentOptions)
                         val next = current.copy(dialogue = current.dialogue + addition, updatedAt = System.currentTimeMillis())
-                        if (next.dialogue.size < 3) {
-                            val (question, options) = parseChoice(client.chat(
+                        if (next.dialogue.size >= 4) {
+                            current = runEvaluator(key, next)
+                        } else {
+                            val c = parseChoice(client.chat(
                                 key = key, system = Tutors.studentChoice,
                                 input = Tutors.transcript(next) + "\n" + bankRef() +
-                                    "\n请提出第${next.dialogue.size + 1}个追问（选择题形式），不要重复前面的问题。",
+                                    "\n请判断用户的回答是否解除了你的疑惑：已解除则输出 done=true；" +
+                                    "未解除则提出下一个追问（选择题形式），不要重复前面的问题。",
                                 json = true, maxTokens = 480
                             ))
-                            current = next.copy(currentQuestion = question, currentOptions = options)
-                        } else {
-                            val judgement = client.chat(
-                                key = key, system = Tutors.evaluator,
-                                input = Tutors.transcript(next) + "\n" + bankRef() +
-                                    "\n现在请按指定 json 结构评价本次讲解。",
-                                json = true, maxTokens = 1600
-                            )
-                            JSONObject(judgement) // only move to next stage for valid JSON
-                            current = next.copy(stage = "REVIEW", currentQuestion = "", evaluationJson = judgement)
+                            current = if (c.done) runEvaluator(key, next)
+                                      else next.copy(currentQuestion = c.question, currentOptions = c.options)
                         }
                     }
                     "REWRITE" -> {
@@ -290,7 +359,10 @@ private fun MainUI(
     onSaveKey: (String) -> Unit,
     onDeleteKey: () -> Unit,
     onSpeech: (String) -> Unit,
-    onOpenHistory: (Lesson) -> Unit
+    onOpenHistory: (Lesson) -> Unit,
+    doubts: List<Doubt>,
+    onToggleDoubt: (Doubt) -> Unit,
+    onLoop: (String) -> Unit
 ) {
     var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var keyDraft by remember { mutableStateOf("") }
@@ -358,6 +430,7 @@ private fun MainUI(
             if (page != "lesson") NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                 listOf(
                     Triple("home", "研习", Icons.Default.Home),
+                    Triple("doubts", "疑点", Icons.Default.Lightbulb),
                     Triple("history", "笔记", Icons.Default.MenuBook),
                     Triple("settings", "设置", Icons.Default.Settings)
                 ).forEach { item ->
@@ -386,7 +459,14 @@ private fun MainUI(
                     active = lesson, hasKey = hasKey,
                     onResume = onResume, onSettings = { onNavigate("settings") },
                     onPickGroup = { selectedGroup = it; onNavigate("topic") },
-                    onRandom = { QuestionBank.randomQuestion().let(onStartQuestion) },
+                    onRandom = {
+                        val practiced = history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
+                        val next = QuestionBank.questions
+                            .filter { it.id !in practiced }
+                            .minByOrNull { it.difficulty }
+                            ?: QuestionBank.randomQuestion()
+                        onStartQuestion(next)
+                    },
                     onCustom = { showCustom = true }
                 )
                 "topic" -> if (selectedGroup != null) {
@@ -396,9 +476,10 @@ private fun MainUI(
                     Spacer(Modifier.fillMaxSize())
                 }
                 "lesson" -> LessonScreen(
-                    lesson, busy, error, speaking, onSend, onRevise, startVoice,
+                    lesson, busy, error, speaking, onSend, onRevise, onLoop, startVoice,
                     speechText, { speechText = "" }, onSpeech
                 )
+                "doubts" -> DoubtsScreen(doubts, onToggleDoubt)
                 "history" -> HistoryScreen(history, onOpenHistory)
                 "settings" -> SettingsScreen(hasKey, keyDraft, { keyDraft = it },
                     { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
@@ -516,7 +597,7 @@ private fun HomeScreen(
                 ) {
                     Icon(Icons.Default.Shuffle, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("随机一题", color = Jade, maxLines = 1)
+                    Text("今日一题", color = Jade, maxLines = 1)
                 }
                 OutlinedButton(
                     onClick = onCustom, modifier = Modifier.weight(1f).height(48.dp),
@@ -595,7 +676,7 @@ private fun stageIndex(stage: String): Int = when (stage) {
 private fun StageLabel(stage: String, answered: Int) {
     val label = when (stage) {
         "INTRO" -> "第一步 · 初讲"
-        "ASK" -> "第二步 · 追问 ${(answered + 1).coerceAtMost(3)}/3"
+        "ASK" -> "第二步 · 追问（已答 $answered 问）"
         "REVIEW" -> "第三步 · 明辨"
         "REWRITE" -> "第四步 · 再讲一次"
         else -> "研习完成"
@@ -735,7 +816,7 @@ private fun UserBubble(text: String) {
 @Composable
 private fun LessonScreen(
     lesson: Lesson, busy: Boolean, error: String, speaking: String,
-    onSend: (String) -> Unit, onRevise: () -> Unit,
+    onSend: (String) -> Unit, onRevise: () -> Unit, onLoop: (String) -> Unit,
     voice: () -> Unit, speechText: String, consumeSpeech: (String) -> Unit,
     readAloud: (String) -> Unit
 ) {
@@ -793,6 +874,18 @@ private fun LessonScreen(
                             onClick = onRevise, modifier = Modifier.fillMaxWidth().height(50.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) { Text("重新讲解", fontSize = 15.sp, maxLines = 1) }
+                    }
+                    item(key = "loop") {
+                        val weak = runCatching {
+                            JSONObject(lesson.evaluationJson).optString("issues").trim()
+                        }.getOrDefault("")
+                        if (weak.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = { onLoop(weak) }, enabled = !busy,
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade)
+                            ) { Text("回到学生，再讲这一处", color = Jade, fontSize = 15.sp, maxLines = 1) }
+                        }
                     }
                 }
                 "REWRITE" -> item(key = "tutor2") {
@@ -1058,6 +1151,83 @@ private fun EvaluationCard(jsonText: String) {
                     }
                 }
             Text("本评价由 AI 生成，仅供参考。", fontSize = 11.sp, color = Ink70)
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Doubts: the core asset — open/resolved learning state (原理4)     */
+/* ------------------------------------------------------------------ */
+
+@Composable
+private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit) {
+    val open = doubts.filter { !it.resolved }
+    val closed = doubts.filter { it.resolved }
+    if (doubts.isEmpty()) {
+        Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center) {
+            Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Jade, modifier = Modifier.size(44.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("尚无疑点", fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("课堂评估中发现的薄弱处会自动沉淀到这里。", fontSize = 13.sp, color = Ink70)
+        }
+    } else {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Text(
+                    "未决疑点 ${open.size}",
+                    fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = Ink
+                )
+                if (open.isEmpty()) {
+                    Text("全部消除，境界日进。", color = Jade, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            items(open, key = { "o${it.createdAt}-${it.text.hashCode()}" }) { d ->
+                DoubtCard(d, onToggle)
+            }
+            if (closed.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Text("已消除 ${closed.size}", color = Ink70, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                items(closed, key = { "c${it.createdAt}-${it.text.hashCode()}" }) { d ->
+                    DoubtCard(d, onToggle)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit) {
+    Surface(
+        color = Color.White, shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, if (d.resolved) Ink12 else Gold.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth().clickable { onToggle(d) }
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (d.resolved) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = if (d.resolved) "标记为未决" else "标记为已消除",
+                tint = if (d.resolved) Jade else Gold,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    d.text, fontSize = 14.sp, lineHeight = 21.sp, color = if (d.resolved) Ink70 else Ink,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "${d.topic} · " + SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(d.createdAt)),
+                    fontSize = 12.sp, color = Ink70, maxLines = 1
+                )
+            }
         }
     }
 }
