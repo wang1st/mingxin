@@ -32,7 +32,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -1256,7 +1258,9 @@ private fun FreeTextPanel(
             modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
             minLines = 2, maxLines = 6,
             enabled = !busy,
-            placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) }
+            placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (input.isNotBlank() && !busy) onSend(input) })
         )
         Button(
             onClick = { onSend(input) },
