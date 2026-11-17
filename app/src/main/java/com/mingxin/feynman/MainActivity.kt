@@ -995,7 +995,6 @@ private fun ThinkingCard() {
 }
 
 @Composable
-private fun OptionRow@Composable
 private fun OptionRow(
     index: Int, text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit
 ) {
