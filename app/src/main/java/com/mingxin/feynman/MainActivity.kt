@@ -6,10 +6,21 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,9 +38,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +93,7 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var error by mutableStateOf("")
     private var hasApiKey by mutableStateOf(false)
+    private var speaking by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,7 +105,15 @@ class MainActivity : ComponentActivity() {
             (0 until arr.length()).map { Lesson.fromJson(arr.getJSONObject(it)) }
         }.getOrDefault(emptyList())
         tts = TextToSpeech(this) { result ->
-            if (result == TextToSpeech.SUCCESS) tts?.language = Locale.SIMPLIFIED_CHINESE
+            if (result == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.SIMPLIFIED_CHINESE
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { speaking = "" }
+                    @Deprecated("deprecated in API 21")
+                    override fun onError(id: String?) { speaking = "" }
+                })
+            }
         }
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(
@@ -100,7 +123,7 @@ class MainActivity : ComponentActivity() {
             )) {
                 MainUI(
                     page = page, lesson = current, history = history, busy = busy,
-                    error = error, hasKey = hasApiKey,
+                    error = error, hasKey = hasApiKey, speaking = speaking,
                     onNavigate = { page = it; error = "" },
                     onStartQuestion = ::startQuestion,
                     onCustomTopic = ::startCustom,
@@ -231,7 +254,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun speak(text: String) {
-        if (text.isNotBlank()) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "lesson_question")
+        if (text.isBlank()) return
+        if (speaking == text) { tts?.stop(); speaking = ""; return }
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "lesson_question")
+        speaking = text
     }
 
     override fun onDestroy() {
@@ -254,6 +280,7 @@ private fun MainUI(
     error: String,
     hasKey: Boolean,
     onNavigate: (String) -> Unit,
+    speaking: String,
     onStartQuestion: (BankQuestion) -> Unit,
     onCustomTopic: (String) -> Unit,
     onResume: () -> Unit,
@@ -368,7 +395,7 @@ private fun MainUI(
                     Spacer(Modifier.fillMaxSize())
                 }
                 "lesson" -> LessonScreen(
-                    lesson, busy, error, onSend, onRevise, startVoice,
+                    lesson, busy, error, speaking, onSend, onRevise, startVoice,
                     speechText, { speechText = "" }, onSpeech
                 )
                 "history" -> HistoryScreen(history, onOpenHistory)
@@ -636,7 +663,7 @@ private fun RoleAvatar(char: String, bg: Color) {
 }
 
 @Composable
-private fun StudentCard(text: String, onSpeak: () -> Unit) {
+private fun StudentCard(text: String, active: Boolean = false, onSpeak: () -> Unit) {
     Row {
         RoleAvatar("善", Jade)
         Spacer(Modifier.width(8.dp))
@@ -652,7 +679,12 @@ private fun StudentCard(text: String, onSpeak: () -> Unit) {
                 Spacer(Modifier.width(7.dp))
                 Text("善问 · AI 学生", color = Jade, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
                 IconButton(onClick = onSpeak, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.Default.VolumeUp, contentDescription = "朗读", tint = Jade, modifier = Modifier.size(18.dp))
+                    Icon(
+                        if (active) Icons.Default.Stop else Icons.Default.VolumeUp,
+                        contentDescription = if (active) "停止朗读" else "朗读",
+                        tint = if (active) Vermilion else Jade,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
             Text(text, color = Ink, lineHeight = 24.sp, fontSize = 16.sp)
@@ -701,18 +733,25 @@ private fun UserBubble(text: String) {
 
 @Composable
 private fun LessonScreen(
-    lesson: Lesson, busy: Boolean, error: String,
+    lesson: Lesson, busy: Boolean, error: String, speaking: String,
     onSend: (String) -> Unit, onRevise: () -> Unit,
     voice: () -> Unit, speechText: String, consumeSpeech: (String) -> Unit,
     readAloud: (String) -> Unit
 ) {
-    var input by remember(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
-    var selectedOption by remember(lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf(-1) }
+    var input by rememberSaveable(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
+    var selectedOption by rememberSaveable(lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf(-1) }
+    val listState = rememberLazyListState()
+    val focusRequester = remember { FocusRequester() }
     LaunchedEffect(speechText) {
         if (speechText.isNotBlank()) {
             input = (input + " " + speechText).trim()
             consumeSpeech("")
+            focusRequester.requestFocus()
         }
+    }
+    LaunchedEffect(lesson.stage, lesson.currentQuestion, lesson.dialogue.size, lesson.evaluationJson, lesson.finalFeedback) {
+        val count = listState.layoutInfo.totalItemsCount
+        if (count > 0) listState.animateScrollToItem(count - 1)
     }
     val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
     val choiceMode = lesson.stage == "ASK" && lesson.currentOptions.isNotEmpty()
@@ -728,6 +767,7 @@ private fun LessonScreen(
     Column(Modifier.fillMaxSize()) {
         StageLabel(lesson.stage, lesson.dialogue.size)
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -736,13 +776,13 @@ private fun LessonScreen(
             if (lesson.firstExplanation.isNotBlank()) item { UserBubble(lesson.firstExplanation) }
             itemsIndexed(lesson.dialogue, key = { i, _ -> "qa$i" }) { _, qa ->
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StudentCard(qa.question) { readAloud(qa.question) }
+                    StudentCard(qa.question, speaking == qa.question) { readAloud(qa.question) }
                     UserBubble(qa.answer)
                 }
             }
             when (lesson.stage) {
                 "ASK" -> item(key = "current") {
-                    StudentCard(lesson.currentQuestion) { readAloud(lesson.currentQuestion) }
+                    StudentCard(lesson.currentQuestion, speaking == lesson.currentQuestion) { readAloud(lesson.currentQuestion) }
                 }
                 "REVIEW" -> {
                     item(key = "tutor") { TutorCard("你的初讲与三轮回答我都看完了。下面是义理、逻辑、表达与应用的审核，评分只反映本轮表现。") }
@@ -787,77 +827,36 @@ private fun LessonScreen(
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (choiceMode) {
-                    Text("选一个最接近你想法的回答", color = Ink70, fontSize = 13.sp, maxLines = 1)
-                    lesson.currentOptions.forEachIndexed { i, opt ->
-                        OptionRow(
-                            index = i, text = opt,
-                            selected = selectedOption == i, enabled = !busy,
-                            onClick = { selectedOption = i }
-                        )
-                    }
-                    OptionRow(
-                        index = -1, text = "以上都不是，我有不同想法",
-                        selected = selectedOption == lesson.currentOptions.size, enabled = !busy,
-                        onClick = { selectedOption = lesson.currentOptions.size }
+                AnimatedVisibility(
+                    visible = choiceMode,
+                    enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                    exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
+                ) {
+                    ChoicePanel(
+                        lesson = lesson,
+                        selectedOption = selectedOption,
+                        onSelect = { selectedOption = it },
+                        input = input,
+                        onInputChange = { input = it },
+                        busy = busy,
+                        onSend = onSend
                     )
-                    val escape = selectedOption == lesson.currentOptions.size
-                    if (escape) {
-                        OutlinedTextField(
-                            value = input, onValueChange = { input = it },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
-                            minLines = 2, maxLines = 5,
-                            enabled = !busy,
-                            placeholder = { Text("用你自己的话说……", color = Ink70, fontSize = 14.sp) }
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            if (escape) onSend(input)
-                            else if (selectedOption in lesson.currentOptions.indices) onSend(lesson.currentOptions[selectedOption])
-                        },
-                        enabled = !busy && (if (escape) input.isNotBlank() else selectedOption >= 0),
-                        modifier = Modifier.fillMaxWidth().height(44.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        if (busy) {
-                            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                        } else {
-                            Text("作答", fontSize = 15.sp, maxLines = 1)
-                        }
-                    }
-                } else {
-                OutlinedTextField(
-                    value = input, onValueChange = { input = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
-                    minLines = 3, maxLines = 6,
-                    enabled = !busy,
-                    placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) }
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(
-                        onClick = voice, enabled = !busy,
-                        modifier = Modifier.height(44.dp),
-                        shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
-                    ) {
-                        Icon(Icons.Default.Mic, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text("语音", color = Ink, fontSize = 14.sp, maxLines = 1)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Button(
-                        onClick = { onSend(input) },
-                        enabled = input.isNotBlank() && !busy,
-                        modifier = Modifier.weight(1f).height(44.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        if (busy) {
-                            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                        } else {
-                            Text(sendLabel, fontSize = 15.sp, maxLines = 1)
-                        }
-                    }
                 }
+                AnimatedVisibility(
+                    visible = !choiceMode,
+                    enter = fadeIn(tween(200)),
+                    exit = fadeOut(tween(150))
+                ) {
+                    FreeTextPanel(
+                        input = input,
+                        onInputChange = { input = it },
+                        voice = voice,
+                        busy = busy,
+                        sendLabel = sendLabel,
+                        inputHint = inputHint,
+                        onSend = onSend,
+                        focusRequester = focusRequester
+                    )
                 }
             }
         }
@@ -865,6 +864,138 @@ private fun LessonScreen(
 }
 
 @Composable
+private fun ChoicePanel(
+    lesson: Lesson,
+    selectedOption: Int,
+    onSelect: (Int) -> Unit,
+    input: String,
+    onInputChange: (String) -> Unit,
+    busy: Boolean,
+    onSend: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("选一个最接近你想法的回答", color = Ink70, fontSize = 13.sp, maxLines = 1)
+        lesson.currentOptions.forEachIndexed { i, opt ->
+            OptionRow(
+                index = i, text = opt,
+                selected = selectedOption == i, enabled = !busy,
+                onClick = { onSelect(i) }
+            )
+        }
+        OptionRow(
+            index = -1, text = "以上都不是，我有不同想法",
+            selected = selectedOption == lesson.currentOptions.size, enabled = !busy,
+            onClick = { onSelect(lesson.currentOptions.size) }
+        )
+        val escape = selectedOption == lesson.currentOptions.size
+        if (escape) {
+            OutlinedTextField(
+                value = input, onValueChange = onInputChange,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+                minLines = 2, maxLines = 5,
+                enabled = !busy,
+                placeholder = { Text("用你自己的话说……", color = Ink70, fontSize = 14.sp) }
+            )
+        }
+        Button(
+            onClick = {
+                if (escape) onSend(input)
+                else if (selectedOption in lesson.currentOptions.indices) onSend(lesson.currentOptions[selectedOption])
+            },
+            enabled = !busy && (if (escape) input.isNotBlank() else selectedOption >= 0),
+            modifier = Modifier.fillMaxWidth().height(44.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (busy) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+            } else {
+                Text("作答", fontSize = 15.sp, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FreeTextPanel(
+    input: String,
+    onInputChange: (String) -> Unit,
+    voice: () -> Unit,
+    busy: Boolean,
+    sendLabel: String,
+    inputHint: String,
+    onSend: (String) -> Unit,
+    focusRequester: FocusRequester
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = input, onValueChange = onInputChange,
+            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).heightIn(min = 90.dp),
+            minLines = 3, maxLines = 6,
+            enabled = !busy,
+            placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) }
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = voice, enabled = !busy,
+                modifier = Modifier.height(44.dp),
+                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("语音", color = Ink, fontSize = 14.sp, maxLines = 1)
+            }
+            Spacer(Modifier.width(10.dp))
+            Button(
+                onClick = { onSend(input) },
+                enabled = input.isNotBlank() && !busy,
+                modifier = Modifier.weight(1f).height(44.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Text(sendLabel, fontSize = 15.sp, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThinkingCard() {
+    val transition = rememberInfiniteTransition(label = "thinking")
+    val dotAlphas = (0..2).map { i ->
+        transition.animateFloat(
+            initialValue = 0.25f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(600, delayMillis = i * 180), RepeatMode.Reverse),
+            label = "dot$i"
+        )
+    }
+    Row {
+        RoleAvatar("善", Jade)
+        Spacer(Modifier.width(8.dp))
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Jade10)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            dotAlphas.forEach { alpha ->
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(Jade.copy(alpha = alpha.value))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OptionRow@Composable
 private fun OptionRow(
     index: Int, text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit
 ) {
@@ -982,6 +1113,20 @@ private fun SettingsScreen(
     hasKey: Boolean, draft: String, changeDraft: (String) -> Unit, save: () -> Unit, delete: () -> Unit
 ) {
     var visible by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除密钥", fontFamily = Serif) },
+            text = { Text("将删除本机加密保存的 API Key，删除后需重新配置才能研习。") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; delete() }) { Text("删除", color = Vermilion) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消", color = Ink70) }
+            }
+        )
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
@@ -1020,7 +1165,7 @@ private fun SettingsScreen(
         if (hasKey) {
             item {
                 OutlinedButton(
-                    onClick = delete, modifier = Modifier.fillMaxWidth().height(46.dp),
+                    onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth().height(46.dp),
                     shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Vermilion)
                 ) { Text("删除密钥", color = Vermilion, maxLines = 1) }
             }
