@@ -1054,8 +1054,11 @@ private fun LessonScreen(
     }
     val scope = rememberCoroutineScope()
     val scrollToBottom: () -> Unit = {
-        val count = listState.layoutInfo.totalItemsCount
-        if (count > 0) scope.launch { listState.animateScrollToItem(count - 1) }
+        scope.launch {
+            kotlinx.coroutines.delay(300) // 等键盘动画落定再滚，滚的才是收缩后的真实底部
+            val count = listState.layoutInfo.totalItemsCount
+            if (count > 0) listState.animateScrollToItem(count - 1)
+        }
     }
     val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
     val choiceMode = lesson.stage == "ASK" && lesson.currentOptions.isNotEmpty()
@@ -1068,7 +1071,7 @@ private fun LessonScreen(
         else -> "这一次，我这样讲……"
     }
 
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize()) {
         StageLabel(lesson.stage, lesson.dialogue.size)
         LazyColumn(
             state = listState,
