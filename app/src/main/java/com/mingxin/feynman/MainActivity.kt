@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -61,17 +62,24 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 /* ------------------------------------------------------------------ */
 /*  One palette, four named colors; every tint is derived from them.   */
 /* ------------------------------------------------------------------ */
-private val Paper = Color(0xFFF6F3EA)
+private val Paper = Color(0xFFFAF8F3)
 private val Ink = Color(0xFF20362E)
 private val Jade = Color(0xFF3B7965)
+private val JadeDeep = Color(0xFF2F5D4D)
+private val JadeBright = Color(0xFF4A8B74)
 private val Gold = Color(0xFF9E793E)
 private val Vermilion = Color(0xFFB4432F)
+private val JadeGrad = listOf(JadeBright, JadeDeep)
+private val CardRadius = 20.dp
+private val CardShape = RoundedCornerShape(CardRadius)
+private val BtnShape = RoundedCornerShape(50)
 
 private val Ink70 = Ink.copy(alpha = 0.70f)
 private val GoldText = Color(0xFF84652F)
@@ -156,7 +164,8 @@ class MainActivity : ComponentActivity() {
                     onExportNotes = { exportNotes() },
                     onToggleDoubt = ::toggleDoubt,
                     onLoop = ::loopBack,
-                    nextUp = nextUp(current.questionId)
+                    nextUp = nextUp(current.questionId),
+                    onPractice = { startQuestion(nextUp(null) ?: QuestionBank.randomQuestion()) }
                 )
             }
         }
@@ -421,6 +430,22 @@ class MainActivity : ComponentActivity() {
 /*  Scaffold, navigation and home                                     */
 /* ------------------------------------------------------------------ */
 
+@Composable
+private fun NavEntry(
+    key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+    page: String, onClick: () -> Unit
+) {
+    val selected = page == key
+    Column(
+        Modifier.weight(1f).clickable(onClick = onClick).padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = if (selected) Jade else Ink70, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 11.sp, color = if (selected) Jade else Ink70, maxLines = 1)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainUI(
@@ -445,7 +470,8 @@ private fun MainUI(
     onToggleDoubt: (Doubt) -> Unit,
     onLoop: (String) -> Unit,
     nextUp: BankQuestion?,
-    onExportNotes: () -> Unit
+    onExportNotes: () -> Unit,
+    onPractice: () -> Unit
 ) {
     var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var keyDraft by remember { mutableStateOf("") }
@@ -475,7 +501,7 @@ private fun MainUI(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (page == "lesson" || page == "topic" || page == "browse") TopAppBar(
                 title = {
                     Text(
                         if (page == "lesson") "费曼课堂" else "明心",
@@ -483,7 +509,7 @@ private fun MainUI(
                     )
                 },
                 navigationIcon = {
-                    if (page == "lesson" || page == "topic" || page == "browse") IconButton(onClick = { onNavigate("home") }) {
+                    IconButton(onClick = { onNavigate("home") }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -491,19 +517,27 @@ private fun MainUI(
             )
         },
         bottomBar = {
-            if (page != "lesson") NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                listOf(
-                    Triple("home", "研习", Icons.Default.Home),
-                    Triple("doubts", "疑点", Icons.Default.Lightbulb),
-                    Triple("history", "笔记", Icons.Default.MenuBook),
-                    Triple("settings", "设置", Icons.Default.Settings)
-                ).forEach { item ->
-                    NavigationBarItem(
-                        selected = page == item.first, onClick = { onNavigate(item.first) },
-                        icon = { Icon(item.third, contentDescription = item.second) },
-                        label = { Text(item.second, maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Jade, selectedTextColor = Jade, indicatorColor = Jade10)
-                    )
+            if (page != "lesson") Box {
+                Surface(color = Color.White, shadowElevation = 10.dp, tonalElevation = 0.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        NavEntry("home", "研习", Icons.Default.Home, page) { onNavigate("home") }
+                        NavEntry("doubts", "疑点", Icons.Default.Lightbulb, page) { onNavigate("doubts") }
+                        Spacer(Modifier.width(64.dp))
+                        NavEntry("history", "笔记", Icons.Default.MenuBook, page) { onNavigate("history") }
+                        NavEntry("settings", "设置", Icons.Default.Settings, page) { onNavigate("settings") }
+                    }
+                }
+                FloatingActionButton(
+                    onClick = onPractice,
+                    modifier = Modifier.align(Alignment.Center).offset(y = (-20).dp).size(56.dp),
+                    shape = CircleShape,
+                    containerColor = Jade, contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(6.dp)
+                ) {
+                    Icon(Icons.Default.AutoStories, contentDescription = "开始研习", modifier = Modifier.size(24.dp))
                 }
             }
         },
@@ -523,7 +557,9 @@ private fun MainUI(
                     active = lesson, hasKey = hasKey, history = history, doubts = doubts,
                     onResume = onResume, onSettings = { onNavigate("settings") },
                     onBrowse = { onNavigate("browse") },
-                    onStart = onStartQuestion
+                    onStart = onStartQuestion,
+                    onDoubts = { onNavigate("doubts") },
+                    onCustom = { showCustom = true }
                 )
                 "browse" -> BrowseScreen(
                     onPickGroup = { selectedGroup = it; onNavigate("topic") },
@@ -549,10 +585,27 @@ private fun MainUI(
 }
 
 @Composable
+private fun greeting(): String {
+    val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    return if (h < 5) "夜深了" else if (h < 12) "早上好" else if (h < 18) "下午好" else "晚上好"
+}
+
+/** 连续研习天数：以今天（或昨天）结尾往回数。 */
+private fun streakOf(history: List<Lesson>): Int {
+    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val days = history.map { fmt.format(Date(it.updatedAt)) }.toSet()
+    val cal = Calendar.getInstance()
+    if (fmt.format(cal.time) !in days) cal.add(Calendar.DAY_OF_YEAR, -1)
+    var n = 0
+    while (fmt.format(cal.time) in days) { n++; cal.add(Calendar.DAY_OF_YEAR, -1) }
+    return n
+}
+
+@Composable
 private fun HomeScreen(
     active: Lesson, hasKey: Boolean, history: List<Lesson>, doubts: List<Doubt>,
     onResume: () -> Unit, onSettings: () -> Unit, onBrowse: () -> Unit,
-    onStart: (BankQuestion) -> Unit
+    onStart: (BankQuestion) -> Unit, onDoubts: () -> Unit, onCustom: () -> Unit
 ) {
     val practiced = remember(history.size) {
         history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
@@ -562,8 +615,9 @@ private fun HomeScreen(
         ?.let { QuestionBank.byId(it) }?.takeIf { it.id !in practiced }
     val remaining = QuestionBank.questions.filter { it.id !in practiced }
     val next = candidate ?: remaining.minByOrNull { it.difficulty } ?: QuestionBank.randomQuestion()
-    val dispatch = if (remaining.isNotEmpty()) "依难度递进 · 余 ${remaining.size} 题" else "已全练 · 随机复习"
+    val streak = remember(history.size) { streakOf(history) }
     val openDoubts = doubts.count { !it.resolved }
+    val inFlight = active.topic.isNotBlank() && active.stage != "DONE"
     var pendingStart by remember { mutableStateOf<BankQuestion?>(null) }
     var confirmAbandon by remember { mutableStateOf(false) }
     if (confirmAbandon) {
@@ -590,104 +644,129 @@ private fun HomeScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("下一题 · $dispatch", color = GoldText, fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
-                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        DifficultyDots(next.difficulty)
-                    }
-                    Text(next.question, fontFamily = Serif, fontSize = 18.sp, lineHeight = 26.sp,
-                        fontWeight = FontWeight.Bold, color = Ink)
-                    if (next.anchor.isNotBlank()) {
-                        Text("锚点 · ${next.anchor}", color = Ink70, fontSize = 12.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    val inFlight = active.topic.isNotBlank() && active.stage != "DONE"
-                    Button(
-                        onClick = {
-                            when {
-                                !inFlight -> onStart(next)
-                                active.questionId.isNotBlank() && active.questionId == next.id -> onResume()
-                                else -> { pendingStart = next; confirmAbandon = true }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) { Text(if (inFlight && active.questionId == next.id) "继续研习" else "开始研习", fontSize = 16.sp, maxLines = 1) }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            "换一题",
-                            color = Jade, fontSize = 13.sp, maxLines = 1,
-                            modifier = Modifier.clickable {
-                                val pool = remaining.filter { it.id != next.id }
-                                candidateId = (pool.randomOrNull() ?: QuestionBank.randomQuestion()).id
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        if (!hasKey) {
-            item {
-                Surface(color = Vermilion12, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("尚未配置 API Key", color = Vermilion, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                        TextButton(onClick = onSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text("去设置", color = Vermilion, maxLines = 1) }
-                    }
-                }
-            }
-        }
-
-        if (active.topic.isNotBlank() && active.stage != "DONE") {
-            item {
-                OutlinedButton(
-                    onClick = onResume, modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade)
-                ) {
-                    Text("继续 · ${active.topic}", color = Jade, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-
-        item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "已练 ${practiced.size} 题", color = Ink70, fontSize = 13.sp, maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    "未决疑点 $openDoubts", color = if (openDoubts > 0) GoldText else Jade,
-                    fontSize = 13.sp, maxLines = 1
-                )
+                RoleAvatar("明", Jade)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("${greeting()}，欢迎回来", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = Ink, fontFamily = Serif, maxLines = 1)
+                    Text("今日也来讲一课", fontSize = 13.sp, color = Ink70, maxLines = 1)
+                }
+                if (!hasKey) {
+                    TextButton(onClick = onSettings, modifier = Modifier.heightIn(min = 44.dp)) {
+                        Text("配置密钥", color = Vermilion, fontSize = 13.sp, maxLines = 1)
+                    }
+                }
             }
         }
 
         item {
-            Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onBrowse() }) {
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("自由选题", modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp, maxLines = 1)
-                    Text("心经 · 金刚经 · 楞伽经", color = Ink70, fontSize = 12.sp, maxLines = 1)
-                    Spacer(Modifier.width(4.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
-                        tint = Ink70, modifier = Modifier.size(16.dp))
+            Surface(color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LocalFireDepartment, contentDescription = null,
+                        tint = Vermilion, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("连续研习 $streak 天", fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            color = Ink, maxLines = 1)
+                        Text("已练 ${practiced.size} 题", fontSize = 12.sp, color = Ink70, maxLines = 1)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Icon(Icons.Default.Lightbulb, contentDescription = null,
+                            tint = if (openDoubts > 0) Gold else Jade, modifier = Modifier.size(22.dp))
+                        Text("疑点 $openDoubts", fontSize = 12.sp,
+                            color = if (openDoubts > 0) GoldText else Jade, maxLines = 1)
+                    }
                 }
             }
+        }
+
+        item {
+            Surface(
+                shape = CardShape, shadowElevation = 6.dp, modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(Modifier.background(Brush.linearGradient(JadeGrad)).padding(18.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (inFlight && active.questionId == next.id) "继续研习 · ${next.sutra}"
+                                else "下一题 · ${next.sutra}",
+                                color = Color(0xFFD9E8E0), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp, modifier = Modifier.weight(1f), maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            DifficultyDots(next.difficulty, Color.White)
+                        }
+                        Text(
+                            next.question, fontFamily = Serif, fontSize = 18.sp, lineHeight = 26.sp,
+                            fontWeight = FontWeight.Bold, color = Color.White
+                        )
+                        if (next.anchor.isNotBlank()) {
+                            Text("锚点 · ${next.anchor}", color = Color(0xFFBFD8CC), fontSize = 12.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (remaining.isNotEmpty()) "依难度递进 · 余 ${remaining.size} 题" else "已全练 · 随机复习",
+                                color = Color(0xFFBFD8CC), fontSize = 12.sp,
+                                modifier = Modifier.weight(1f), maxLines = 1
+                            )
+                            Surface(
+                                color = Color.White, shape = BtnShape,
+                                modifier = Modifier.clickable {
+                                    when {
+                                        !inFlight -> onStart(next)
+                                        active.questionId.isNotBlank() && active.questionId == next.id -> onResume()
+                                        else -> { pendingStart = next; confirmAbandon = true }
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    if (inFlight && active.questionId == next.id) "继续研习" else "开始研习",
+                                    color = JadeDeep, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("快捷研习", fontFamily = Serif, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Ink)
+        }
+
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                QuickChip("自由选题", Icons.Default.MenuBook, Modifier.weight(1f)) { onBrowse() }
+                QuickChip("疑点复习", Icons.Default.Lightbulb, Modifier.weight(1f)) { onDoubts() }
+                QuickChip("自定义课题", Icons.Default.Edit, Modifier.weight(1f)) { onCustom() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickChip(
+    label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier, onClick: () -> Unit
+) {
+    Surface(
+        color = Color.White, shape = CardShape, shadowElevation = 2.dp,
+        modifier = modifier.clickable(onClick = onClick)
+    ) {
+        Column(
+            Modifier.padding(vertical = 14.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(icon, contentDescription = null, tint = Jade, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(label, fontSize = 12.sp, color = Ink, maxLines = 1)
         }
     }
 }
@@ -724,8 +803,7 @@ private fun BrowseScreen(
         }
         items(topics, key = { "${it.sutra}-${it.topic}" }) { group ->
             Surface(
-                color = Color.White, shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onPickGroup(group) }
+                color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().clickable { onPickGroup(group) }
             ) {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -744,7 +822,7 @@ private fun BrowseScreen(
         item {
             OutlinedButton(
                 onClick = onCustom, modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
+                shape = BtnShape, border = BorderStroke(1.dp, Ink12)
             ) {
                 Icon(Icons.Default.Edit, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
@@ -772,8 +850,7 @@ private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
         }
         items(group.questions, key = { it.id }) { q ->
             Surface(
-                color = Color.White, shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { onStart(q) }
+                color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().clickable { onStart(q) }
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -874,7 +951,7 @@ private fun QuestionHero(lesson: Lesson) {
 }
 
 @Composable
-private fun RoleAvatar(char: String, bg: Color) {
+private fun RoleAvatar(char: String, bg: Color, textColor: Color = Color.White) {
     Box(
         Modifier
             .size(28.dp)
@@ -882,36 +959,38 @@ private fun RoleAvatar(char: String, bg: Color) {
             .background(bg),
         contentAlignment = Alignment.Center
     ) {
-        Text(char, color = Color.White, fontSize = 13.sp, fontFamily = Serif, fontWeight = FontWeight.Bold)
+        Text(char, color = textColor, fontSize = 13.sp, fontFamily = Serif, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun StudentCard(text: String, active: Boolean = false, onSpeak: () -> Unit) {
     Row {
-        RoleAvatar("善", Jade)
+        RoleAvatar("善", Color.White, JadeDeep)
         Spacer(Modifier.width(8.dp))
         Column(
             Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Jade10)
+                .clip(CardShape)
+                .background(Brush.linearGradient(JadeGrad))
                 .padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.AutoStories, contentDescription = null, tint = Jade, modifier = Modifier.size(17.dp))
+                Icon(Icons.Default.AutoStories, contentDescription = null,
+                    tint = Color(0xFFD9E8E0), modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(7.dp))
-                Text("善问 · AI 学生", color = Jade, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
+                Text("善问 · AI 学生", color = Color(0xFFD9E8E0), fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
                 IconButton(onClick = onSpeak, modifier = Modifier.size(44.dp)) {
                     Icon(
                         if (active) Icons.Default.Stop else Icons.Default.VolumeUp,
                         contentDescription = if (active) "停止朗读" else "朗读",
-                        tint = if (active) Vermilion else Jade,
+                        tint = if (active) Color(0xFFFFD9CC) else Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
-            Text(text, color = Ink, lineHeight = 24.sp, fontSize = 16.sp)
+            Text(text, color = Color.White, lineHeight = 24.sp, fontSize = 16.sp)
         }
     }
 }
@@ -921,7 +1000,7 @@ private fun TutorCard(text: String) {
     Column(
         Modifier
             .fillMaxWidth(0.92f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(CardShape)
             .background(Gold12)
             .padding(14.dp)
     ) {
@@ -942,8 +1021,9 @@ private fun UserBubble(text: String) {
         Column(
             Modifier
                 .weight(0.76f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Ink8)
+                .clip(CardShape)
+                .background(Color.White)
+                .border(0.5.dp, Ink12, CardShape)
                 .padding(14.dp)
         ) {
             Text("我的讲解", color = Ink70, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -1006,7 +1086,7 @@ private fun LessonScreen(
                     item(key = "revise") {
                         Button(
                             onClick = onRevise, modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = BtnShape
                         ) { Text("重新讲解", fontSize = 15.sp, maxLines = 1) }
                     }
                     item(key = "loop") {
@@ -1017,7 +1097,7 @@ private fun LessonScreen(
                             OutlinedButton(
                                 onClick = { onLoop(weak) }, enabled = !busy,
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                                shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade)
+                                shape = BtnShape, border = BorderStroke(1.dp, Jade)
                             ) { Text("回到学生，再讲这一处", color = Jade, fontSize = 15.sp, maxLines = 1) }
                         }
                     }
@@ -1037,8 +1117,7 @@ private fun LessonScreen(
                     item(key = "nextUp") {
                         val nq = nextUp
                         if (nq != null) {
-                            Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth()) {
+                            Surface(color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("下一题 · ${nq.sutra}", color = GoldText, fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold, maxLines = 1)
@@ -1048,7 +1127,7 @@ private fun LessonScreen(
                                     Button(
                                         onClick = { onNext(nq) },
                                         modifier = Modifier.fillMaxWidth().height(46.dp),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = BtnShape
                                     ) { Text("开始研习", fontSize = 15.sp, maxLines = 1) }
                                 }
                             }
@@ -1059,7 +1138,7 @@ private fun LessonScreen(
         }
         if (editable) {
             if (error.isNotBlank()) {
-                Surface(color = Vermilion12, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Surface(color = Vermilion12, shape = BtnShape, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         error, color = Vermilion, fontSize = 13.sp, lineHeight = 19.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -1151,7 +1230,7 @@ private fun ChoicePanel(
             },
             enabled = !busy && (if (escape) input.isNotBlank() else selectedOption >= 0),
             modifier = Modifier.fillMaxWidth().height(44.dp),
-            shape = RoundedCornerShape(12.dp)
+            shape = BtnShape
         ) {
             if (busy) {
                 CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -1183,7 +1262,7 @@ private fun FreeTextPanel(
             onClick = { onSend(input) },
             enabled = input.isNotBlank() && !busy,
             modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(12.dp)
+            shape = BtnShape
         ) {
             if (busy) {
                 CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -1209,8 +1288,8 @@ private fun ThinkingCard() {
         Spacer(Modifier.width(8.dp))
         Row(
             Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(Jade10)
+                .clip(CardShape)
+                .background(Brush.linearGradient(JadeGrad))
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1220,7 +1299,7 @@ private fun ThinkingCard() {
                     Modifier
                         .size(7.dp)
                         .clip(CircleShape)
-                        .background(Jade.copy(alpha = alpha.value))
+                        .background(Color.White.copy(alpha = alpha.value))
                 )
             }
         }
@@ -1232,9 +1311,10 @@ private fun OptionRow(
     index: Int, text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit
 ) {
     Surface(
-        color = if (selected) Jade10 else Color.White,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) Jade else Ink12),
+        color = if (selected) Jade else Color.White,
+        shape = CardShape,
+        shadowElevation = if (selected) 4.dp else 2.dp,
+        border = if (selected) null else BorderStroke(1.dp, Ink12),
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
     ) {
         Row(
@@ -1245,18 +1325,20 @@ private fun OptionRow(
                 Modifier
                     .size(22.dp)
                     .clip(CircleShape)
-                    .background(if (selected) Jade else Color.Transparent)
-                    .border(1.5.dp, if (selected) Jade else Ink12, CircleShape),
+                    .background(if (selected) Color.White else Color.Transparent)
+                    .border(1.5.dp, if (selected) Color.White else Ink12, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 when {
-                    selected -> Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                    index < 0 -> Icon(Icons.Default.Edit, contentDescription = null, tint = Ink70, modifier = Modifier.size(12.dp))
-                    else -> Text("${index + 1}", fontSize = 12.sp, color = Ink70)
+                    selected -> Icon(Icons.Default.Check, contentDescription = null, tint = Jade, modifier = Modifier.size(13.dp))
+                    index < 0 -> Icon(Icons.Default.Edit, contentDescription = null,
+                        tint = if (selected) Color.White else Ink70, modifier = Modifier.size(12.dp))
+                    else -> Text("${index + 1}", fontSize = 12.sp, color = if (selected) Color.White else Ink70)
                 }
             }
             Spacer(Modifier.width(12.dp))
-            Text(text, fontSize = 15.sp, lineHeight = 22.sp, color = Ink, modifier = Modifier.weight(1f))
+            Text(text, fontSize = 15.sp, lineHeight = 22.sp,
+                color = if (selected) Color.White else Ink, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -1268,7 +1350,7 @@ private fun EvaluationCard(jsonText: String) {
         Text("评价未能解析", color = Vermilion, fontSize = 13.sp)
         return
     }
-    Surface(color = Color.White, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)) {
+    Surface(color = Color.White, shape = BtnShape, border = BorderStroke(1.dp, Ink12)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf("义理准确" to "accuracy", "逻辑自洽" to "logic", "表达清晰" to "clarity", "生活应用" to "application")
                 .forEach { (label, key) ->
@@ -1345,7 +1427,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen:
 @Composable
 private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
     Surface(
-        color = Color.White, shape = RoundedCornerShape(12.dp),
+        color = Color.White, shape = BtnShape,
         border = BorderStroke(1.dp, if (d.resolved) Ink12 else Gold.copy(alpha = 0.5f)),
         modifier = Modifier.fillMaxWidth().clickable { onToggle(d) }
     ) {
@@ -1394,7 +1476,7 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExpor
             if (history.isNotEmpty()) {
                 OutlinedButton(
                     onClick = onExport, modifier = Modifier.height(38.dp),
-                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade),
+                    shape = BtnShape, border = BorderStroke(1.dp, Jade),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, tint = Jade, modifier = Modifier.size(15.dp))
@@ -1419,8 +1501,7 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExpor
         ) {
             items(history, key = { "${it.questionId}-${it.updatedAt}" }) { item ->
                 Surface(
-                    color = Color.White, shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth().clickable { open(item) }
+                    color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().clickable { open(item) }
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(item.topic, fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 16.sp,
@@ -1495,14 +1576,14 @@ private fun SettingsScreen(
         item {
             Button(
                 onClick = save, enabled = draft.isNotBlank(), modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = BtnShape
             ) { Text("保存", maxLines = 1) }
         }
         if (hasKey) {
             item {
                 OutlinedButton(
                     onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Vermilion)
+                    shape = BtnShape, border = BorderStroke(1.dp, Vermilion)
                 ) { Text("删除密钥", color = Vermilion, maxLines = 1) }
             }
         }
