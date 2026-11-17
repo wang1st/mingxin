@@ -10,6 +10,14 @@ android {
     namespace = "com.mingxin.feynman"
     compileSdk = 36
 
+    signingConfigs {
+        create("ci") {
+            storeFile = file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     defaultConfig {
         applicationId = "com.mingxin.feynman"
         minSdk = 26
@@ -26,6 +34,11 @@ android {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
     buildFeatures { compose = true }
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("ci")
+        }
+    }
 }
 
 dependencies {
