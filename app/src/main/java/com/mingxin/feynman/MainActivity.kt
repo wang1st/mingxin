@@ -456,17 +456,10 @@ private fun MainUI(
             }
             when (page) {
                 "home" -> HomeScreen(
-                    active = lesson, hasKey = hasKey,
+                    active = lesson, hasKey = hasKey, history = history,
                     onResume = onResume, onSettings = { onNavigate("settings") },
                     onPickGroup = { selectedGroup = it; onNavigate("topic") },
-                    onRandom = {
-                        val practiced = history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
-                        val next = QuestionBank.questions
-                            .filter { it.id !in practiced }
-                            .minByOrNull { it.difficulty }
-                            ?: QuestionBank.randomQuestion()
-                        onStartQuestion(next)
-                    },
+                    onStart = onStartQuestion,
                     onCustom = { showCustom = true }
                 )
                 "topic" -> if (selectedGroup != null) {
@@ -490,13 +483,22 @@ private fun MainUI(
 
 @Composable
 private fun HomeScreen(
-    active: Lesson, hasKey: Boolean,
+    active: Lesson, hasKey: Boolean, history: List<Lesson>,
     onResume: () -> Unit, onSettings: () -> Unit,
     onPickGroup: (TopicGroup) -> Unit,
-    onRandom: () -> Unit, onCustom: () -> Unit
+    onStart: (BankQuestion) -> Unit, onCustom: () -> Unit
 ) {
     var sutra by remember { mutableStateOf(QuestionBank.sutras.firstOrNull().orEmpty()) }
     val topics = remember(sutra) { QuestionBank.topicsOf(sutra) }
+    val practiced = remember(history.size) {
+        history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
+    }
+    var candidateId by rememberSaveable { mutableStateOf("") }
+    val candidate = candidateId.takeIf { it.isNotBlank() }
+        ?.let { QuestionBank.byId(it) }?.takeIf { it.id !in practiced }
+    val next = candidate
+        ?: QuestionBank.questions.filter { it.id !in practiced }.minByOrNull { it.difficulty }
+        ?: QuestionBank.randomQuestion()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -504,14 +506,28 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text(
-                "选题研习",
-                fontFamily = Serif, fontSize = 22.sp, lineHeight = 28.sp,
-                fontWeight = FontWeight.Bold, color = Ink
-            )
-            Spacer(Modifier.height(2.dp))
-            Text("你来讲佛法，AI 做爱提问的学生", fontSize = 14.sp, color = Ink70, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
+            Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Ink12), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("下一题 · ${next.sutra}", color = GoldText, fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+                            modifier = Modifier.weight(1f), maxLines = 1)
+                        DifficultyDots(next.difficulty)
+                    }
+                    Text(next.question, fontFamily = Serif, fontSize = 18.sp, lineHeight = 26.sp,
+                        fontWeight = FontWeight.Bold, color = Ink)
+                    if (next.anchor.isNotBlank()) {
+                        Text("锚点 · ${next.anchor}", color = Ink70, fontSize = 12.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Button(
+                        onClick = { onStart(next) }, enabled = !active.topic.isNotBlank() || active.stage == "DONE",
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("开始研习", fontSize = 16.sp, maxLines = 1) }
+                }
+            }
         }
 
         if (!hasKey) {
@@ -530,18 +546,21 @@ private fun HomeScreen(
 
         if (active.topic.isNotBlank() && active.stage != "DONE") {
             item {
-                Button(
-                    onClick = onResume, modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Jade)
+                OutlinedButton(
+                    onClick = onResume, modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("继续", fontSize = 16.sp, maxLines = 1)
-                        Spacer(Modifier.width(10.dp))
-                        Text("·", color = Color.White.copy(alpha = 0.6f))
-                        Spacer(Modifier.width(10.dp))
-                        Text(active.topic, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    Text("继续 · ${active.topic}", color = Jade, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("自由选题", fontFamily = Serif, fontSize = 17.sp, lineHeight = 23.sp,
+                    fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+                if (practiced.isNotEmpty()) {
+                    Text("已练 ${practiced.size} 题", color = Ink70, fontSize = 12.sp, maxLines = 1)
                 }
             }
         }
@@ -592,12 +611,16 @@ private fun HomeScreen(
             Spacer(Modifier.height(2.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
-                    onClick = onRandom, modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Jade)
+                    onClick = {
+                        val pool = QuestionBank.questions.filter { it.id !in practiced && it.id != next.id }
+                        candidateId = (pool.randomOrNull() ?: QuestionBank.randomQuestion()).id
+                    },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Ink12)
                 ) {
-                    Icon(Icons.Default.Shuffle, contentDescription = null, tint = Jade, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Shuffle, contentDescription = null, tint = Ink, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("今日一题", color = Jade, maxLines = 1)
+                    Text("换一题", color = Ink, maxLines = 1)
                 }
                 OutlinedButton(
                     onClick = onCustom, modifier = Modifier.weight(1f).height(48.dp),
