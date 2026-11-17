@@ -491,6 +491,28 @@ private fun HomeScreen(
     val next = candidate ?: remaining.minByOrNull { it.difficulty } ?: QuestionBank.randomQuestion()
     val dispatch = if (remaining.isNotEmpty()) "依难度递进 · 余 ${remaining.size} 题" else "已全练 · 随机复习"
     val openDoubts = doubts.count { !it.resolved }
+    var pendingStart by remember { mutableStateOf<BankQuestion?>(null) }
+    var confirmAbandon by remember { mutableStateOf(false) }
+    if (confirmAbandon) {
+        val target = pendingStart
+        AlertDialog(
+            onDismissRequest = { confirmAbandon = false; pendingStart = null },
+            title = { Text("开始新题？", fontFamily = Serif) },
+            text = { Text("有一节未完成的研习（${active.topic}），开始新题将放弃它。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmAbandon = false
+                    target?.let(onStart)
+                    pendingStart = null
+                }) { Text("放弃并开始", color = Vermilion) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmAbandon = false; pendingStart = null }) {
+                    Text("继续原课", color = Jade)
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -513,11 +535,18 @@ private fun HomeScreen(
                         Text("锚点 · ${next.anchor}", color = Ink70, fontSize = 12.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    val inFlight = active.topic.isNotBlank() && active.stage != "DONE"
                     Button(
-                        onClick = { onStart(next) },
+                        onClick = {
+                            when {
+                                !inFlight -> onStart(next)
+                                active.questionId.isNotBlank() && active.questionId == next.id -> onResume()
+                                else -> { pendingStart = next; confirmAbandon = true }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         shape = RoundedCornerShape(12.dp)
-                    ) { Text("开始研习", fontSize = 16.sp, maxLines = 1) }
+                    ) { Text(if (inFlight && active.questionId == next.id) "继续研习" else "开始研习", fontSize = 16.sp, maxLines = 1) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
                         Text(
