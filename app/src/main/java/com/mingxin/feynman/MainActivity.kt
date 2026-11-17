@@ -1442,6 +1442,7 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExpor
             }
         }
     }
+    }
 }
 
 @Composable
