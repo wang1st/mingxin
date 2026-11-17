@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -1051,6 +1052,11 @@ private fun LessonScreen(
         val count = listState.layoutInfo.totalItemsCount
         if (count > 0) listState.animateScrollToItem(count - 1)
     }
+    val scope = rememberCoroutineScope()
+    val scrollToBottom: () -> Unit = {
+        val count = listState.layoutInfo.totalItemsCount
+        if (count > 0) scope.launch { listState.animateScrollToItem(count - 1) }
+    }
     val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
     val choiceMode = lesson.stage == "ASK" && lesson.currentOptions.isNotEmpty()
     val sendLabel = when (lesson.stage) {
@@ -1062,7 +1068,7 @@ private fun LessonScreen(
         else -> "这一次，我这样讲……"
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().imePadding()) {
         StageLabel(lesson.stage, lesson.dialogue.size)
         LazyColumn(
             state = listState,
@@ -1153,7 +1159,6 @@ private fun LessonScreen(
                 Modifier
                     .fillMaxWidth()
                     .background(Color.White)
-                    .imePadding()
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -1183,7 +1188,8 @@ private fun LessonScreen(
                         busy = busy,
                         sendLabel = sendLabel,
                         inputHint = inputHint,
-                        onSend = onSend
+                        onSend = onSend,
+                        onFocused = scrollToBottom
                     )
                 }
             }
@@ -1250,12 +1256,16 @@ private fun FreeTextPanel(
     busy: Boolean,
     sendLabel: String,
     inputHint: String,
-    onSend: (String) -> Unit
+    onSend: (String) -> Unit,
+    onFocused: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = input, onValueChange = onInputChange,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 72.dp)
+                .onFocusChanged { if (it.isFocused) onFocused() },
             minLines = 2, maxLines = 6,
             enabled = !busy,
             placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) },
@@ -1354,7 +1364,7 @@ private fun EvaluationCard(jsonText: String) {
         Text("评价未能解析", color = Vermilion, fontSize = 13.sp)
         return
     }
-    Surface(color = Color.White, shape = BtnShape, border = BorderStroke(1.dp, Ink12)) {
+    Surface(color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 3.dp) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf("义理准确" to "accuracy", "逻辑自洽" to "logic", "表达清晰" to "clarity", "生活应用" to "application")
                 .forEach { (label, key) ->
