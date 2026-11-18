@@ -23,8 +23,8 @@ android {
         applicationId = "com.mingxin.feynman"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "0.9.5"
+        versionCode = 53
+        versionName = "0.9.6"
     }
 
     compileOptions {
@@ -34,7 +34,7 @@ android {
     kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("ci")

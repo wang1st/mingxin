@@ -1434,12 +1434,12 @@ private fun SettingsScreen(
                         onClick = { onExport("json") },
                         modifier = Modifier.weight(1f).height(44.dp), shape = BtnShape,
                         border = BorderStroke(1.dp, cc.jade)
-                    ) { Text("导出 JSON", color = cc.jade, fontSize = 13.sp, maxLines = 1) }
+                    ) { Text("JSON 备份", color = cc.jade, fontSize = 13.sp, maxLines = 1) }
                     OutlinedButton(
                         onClick = { onExport("markdown") },
                         modifier = Modifier.weight(1f).height(44.dp), shape = BtnShape,
                         border = BorderStroke(1.dp, cc.jade)
-                    ) { Text("导出 Markdown", color = cc.jade, fontSize = 13.sp, maxLines = 1) }
+                    ) { Text("Markdown", color = cc.jade, fontSize = 13.sp, maxLines = 1) }
                 }
             }
         }
@@ -1449,7 +1449,7 @@ private fun SettingsScreen(
             SettingsSection("关于") {
                 Row {
                     Text("版本", fontSize = 13.sp, color = cc.ink70, modifier = Modifier.weight(1f))
-                    Text("0.9.3", fontSize = 13.sp, color = cc.ink)
+                    Text(com.mingxin.feynman.BuildConfig.VERSION_NAME, fontSize = 13.sp, color = cc.ink)
                 }
                 Row {
                     Text("数据存储", fontSize = 13.sp, color = cc.ink70, modifier = Modifier.weight(1f))
