@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -462,10 +463,11 @@ class MainActivity : ComponentActivity() {
 
 /** 应用内自处理的右滑返回：不依赖系统 back dispatch（MIUI 手势对该链路支持有坑）。
  *  key 含 page 且回调经 rememberUpdatedState 保鲜，杜绝首通后 stale capture。 */
-private fun Modifier.swipeBack(enabled: Boolean, page: String, onBack: () -> Unit): Modifier =
-    this.pointerInput(enabled, page) {
+@Composable
+private fun Modifier.swipeBack(enabled: Boolean, page: String, onBack: () -> Unit): Modifier {
+    val currentOnBack = rememberUpdatedState(onBack)
+    return this.pointerInput(enabled, page) {
         if (!enabled) return@pointerInput
-        val currentOnBack = androidx.compose.runtime.rememberUpdatedState(onBack)
         var acc = 0f
         detectHorizontalDragGestures(
             onDragStart = { acc = 0f },
@@ -474,6 +476,7 @@ private fun Modifier.swipeBack(enabled: Boolean, page: String, onBack: () -> Uni
             onDragCancel = { acc = 0f }
         )
     }
+}
 
 @Composable
 private fun NavEntry(
