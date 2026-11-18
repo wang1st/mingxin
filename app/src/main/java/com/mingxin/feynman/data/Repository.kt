@@ -129,15 +129,22 @@ class Repository(private val ctx: Context) {
             val arr = JSONArray(prefs.getString("doubts", "[]") ?: "[]")
             for (i in 0 until arr.length()) {
                 val j = arr.getJSONObject(i)
+                val created = j.optLong("createdAt", now)
+                val resolved = j.optBoolean("resolved", false)
                 doubtDao.upsert(
                     DoubtEntity(
                         id = UUID.randomUUID().toString(),
                         text = j.optString("text"),
                         questionId = j.optString("questionId"),
                         topic = j.optString("topic"),
-                        createdAt = j.optLong("createdAt", now),
-                        resolved = j.optBoolean("resolved", false),
-                        resolvedAt = j.optLong("resolvedAt", 0)
+                        createdAt = created,
+                        resolved = resolved,
+                        resolvedAt = j.optLong("resolvedAt", 0),
+                        // 未决的旧疑点立即进入复习队列（逾期视为该复习了）
+                        nextReviewAt = if (resolved) 0 else now,
+                        intervalDays = if (resolved) 0 else 1,
+                        ease = 2.5f,
+                        streak = 0
                     )
                 )
             }
@@ -181,15 +188,21 @@ class Repository(private val ctx: Context) {
         if (trimmed.isBlank()) return
         val exists = doubtDao.all().any { it.questionId == questionId && it.text == trimmed }
         if (exists) return
+        val now = System.currentTimeMillis()
         doubtDao.upsert(
             DoubtEntity(
                 id = UUID.randomUUID().toString(),
                 text = trimmed,
                 questionId = questionId,
                 topic = topic,
-                createdAt = System.currentTimeMillis(),
+                createdAt = now,
                 resolved = false,
-                resolvedAt = 0
+                resolvedAt = 0,
+                // 首次排程：1 天后回来复习，然后由 SRS 按表现拉长
+                nextReviewAt = now + 24L * 60 * 60 * 1000,
+                intervalDays = 1,
+                ease = 2.5f,
+                streak = 0
             )
         )
     }
