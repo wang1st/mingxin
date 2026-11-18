@@ -104,27 +104,14 @@ object Tutors {
 判定"听懂"要诚实：讲解仍有明显漏洞时不得提前收敛，但用户三言两语确实说清了也不要故意刁难。
 """
 
-    fun bankRef(q: BankQuestion?): String = if (q == null) "" else buildString {
+    fun bankRef(q: com.mingxin.feynman.data.QuestionEntity?): String = if (q == null) "" else buildString {
         appendLine("【备课参考（不得透露给用户）】")
         appendLine("经文锚点：${q.anchor}（${q.edition} ${q.taisho}）")
         appendLine("常见误区：${q.misconception}")
-        q.followups.forEachIndexed { i, f -> appendLine("可供选用的追问方向${i + 1}：$f") }
+        q.followups.split("\n").filter { it.isNotBlank() }
+            .forEachIndexed { i, f -> appendLine("可供选用的追问方向${i + 1}：$f") }
         appendLine("助教审核要点：${q.keyPoints}")
         if (q.grader.isNotBlank()) appendLine("助教评分注意：${q.grader}")
     }
 
-    fun transcript(l: Lesson): String = buildString {
-        appendLine("主题：${l.topic}")
-        if (l.prompt.isNotBlank()) appendLine("研习问题：${l.prompt}")
-        appendLine("用户首次讲解：${l.firstExplanation}")
-        l.dialogue.forEachIndexed { index, qa ->
-            appendLine("第${index + 1}问 AI学生：${qa.question}")
-            if (qa.options.isNotEmpty()) {
-                appendLine("候选回答：${qa.options.joinToString(" / ")}")
-                appendLine("用户选择了：${qa.answer}")
-            } else {
-                appendLine("用户回答：${qa.answer}")
-            }
-        }
-    }
 }

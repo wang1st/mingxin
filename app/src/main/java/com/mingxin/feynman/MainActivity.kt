@@ -1,129 +1,51 @@
 package com.mingxin.feynman
 
-import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
-import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.NavHost
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
 import androidx.core.content.FileProvider
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+import com.mingxin.feynman.data.Exporter
+import com.mingxin.feynman.data.Scheduler
+import com.mingxin.feynman.data.AttemptEntity
+import com.mingxin.feynman.data.QuestionEntity
+import com.mingxin.feynman.data.TopicGroup
+import com.mingxin.feynman.data.byId
+import com.mingxin.feynman.data.topicsOf
+import com.mingxin.feynman.data.sutrasOf
+import com.mingxin.feynman.ui.LessonUi
+import com.mingxin.feynman.ui.QaItem
+import com.mingxin.feynman.ui.theme.*
+import com.mingxin.feynman.ui.screens.DoubtsScreen
+import com.mingxin.feynman.ui.LessonViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/* ------------------------------------------------------------------ */
-/*  One palette, four named colors; every tint is derived from them.   */
-/* ------------------------------------------------------------------ */
-private val Paper = Color(0xFFFAF8F3)
-private val Ink = Color(0xFF20362E)
-private val Jade = Color(0xFF3B7965)
-private val JadeDeep = Color(0xFF2F5D4D)
-private val JadeBright = Color(0xFF4A8B74)
-private val Gold = Color(0xFF9E793E)
-private val Vermilion = Color(0xFFB4432F)
-private val JadeGrad = listOf(JadeBright, JadeDeep)
-private val CardRadius = 20.dp
-private val CardShape = RoundedCornerShape(CardRadius)
-private val BtnShape = RoundedCornerShape(50)
-
-private val Ink70 = Ink.copy(alpha = 0.70f)
-private val GoldText = Color(0xFF84652F)
-private val Ink12 = Ink.copy(alpha = 0.12f)
-private val Ink8 = Ink.copy(alpha = 0.08f)
-private val Jade10 = Jade.copy(alpha = 0.10f)
-private val Gold12 = Gold.copy(alpha = 0.12f)
-private val Vermilion12 = Vermilion.copy(alpha = 0.12f)
-
 class MainActivity : ComponentActivity() {
-    private val prefs by lazy { getSharedPreferences("mingxin_lesson", MODE_PRIVATE) }
-    private val secrets by lazy { SecretStore(this) }
-    private val client = DeepSeekClient()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var tts: TextToSpeech? = null
-
-    private var current by mutableStateOf(Lesson())
-    private var history by mutableStateOf(listOf<Lesson>())
-    private var busy by mutableStateOf(false)
-    private var error by mutableStateOf("")
-    private var hasApiKey by mutableStateOf(false)
     private var speaking by mutableStateOf("")
-    private var doubts by mutableStateOf(listOf<Doubt>())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        QuestionBank.load(this)
-        hasApiKey = secrets.hasKey()
-        current = runCatching { Lesson.fromJson(JSONObject(prefs.getString("active", "{}") ?: "{}")) }.getOrDefault(Lesson())
-        history = runCatching {
-            val arr = JSONArray(prefs.getString("completed", "[]") ?: "[]")
-            (0 until arr.length()).map { Lesson.fromJson(arr.getJSONObject(it)) }
-        }.getOrDefault(emptyList())
-        doubts = runCatching {
-            val arr = JSONArray(prefs.getString("doubts", "[]") ?: "[]")
-            (0 until arr.length()).map { Doubt.fromJson(arr.getJSONObject(it)) }
-        }.getOrDefault(emptyList())
+        enableEdgeToEdge()
+
         tts = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.SIMPLIFIED_CHINESE
@@ -135,297 +57,92 @@ class MainActivity : ComponentActivity() {
                 })
             }
         }
+
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(
                 primary = Jade, onPrimary = Color.White, background = Paper,
                 surface = Color.White, onSurface = Ink, secondary = Gold,
                 error = Vermilion
             )) {
+                val vm: LessonViewModel = viewModel()
+                val lesson by vm.lesson.collectAsStateWithLifecycle()
+                val busy by vm.busy.collectAsStateWithLifecycle()
+                val error by vm.error.collectAsStateWithLifecycle()
+                val hasKey by vm.hasKey.collectAsStateWithLifecycle()
+                val ready by vm.ready.collectAsStateWithLifecycle()
+                val questions by vm.questions.collectAsStateWithLifecycle()
+                val doubts by vm.doubts.collectAsStateWithLifecycle()
+                val attempts by vm.attempts.collectAsStateWithLifecycle()
+                val dueCount by vm.dueCount.collectAsStateWithLifecycle()
+
                 val navController = androidx.navigation.compose.rememberNavController()
-                // composable/NavHost 用 FQN 调用避免导入冲突
                 openLessonFn = { navController.navigate("lesson") { launchSingleTop = true } }
                 val backStackEntry by navController.currentBackStackEntryFlow.collectAsState(initial = null)
                 val page = backStackEntry?.destination?.route ?: "home"
+
+                if (!ready) {
+                    LoadingScreen()
+                    return@setContent
+                }
+
                 MainUI(
-                    page = page, navController = navController, lesson = current, history = history, busy = busy,
-                    error = error, hasKey = hasApiKey, speaking = speaking,
-                    onOpenLesson = { navigateLesson() },
-                    onStartQuestion = ::startQuestion,
-                    onCustomTopic = ::startCustom,
-                    onResume = { navigateLesson() },
-                    onSend = ::send,
-                    onRevise = {
-                        current = current.copy(stage = "REWRITE", updatedAt = System.currentTimeMillis())
-                        persistActive()
-                    },
-                    onSaveKey = { raw ->
-                        if (raw.trim().isBlank()) error = "请输入 API Key"
-                        else {
-                            runCatching { secrets.save(raw.trim()) }
-                                .onSuccess { hasApiKey = true; error = "" }
-                                .onFailure { error = "保存失败：${it.localizedMessage}" }
-                        }
-                    },
-                    onDeleteKey = { secrets.delete(); hasApiKey = false },
-                    onSpeech = { phrase -> speak(phrase) },
-                    onOpenHistory = { selected -> current = selected; persistActive(); navigateLesson() },
+                    page = page,
+                    navController = navController,
+                    lesson = lesson,
+                    attempts = attempts,
                     doubts = doubts,
-                    onExportNotes = { exportNotes() },
-                    onToggleDoubt = ::toggleDoubt,
-                    onLoop = ::loopBack,
-                    nextUp = nextUp(current.questionId),
-                    onPractice = { startQuestion(nextUp(null) ?: QuestionBank.randomQuestion()) },
-                    selectedGroup = selectedGroup,
-                    onSelectGroup = { g -> selectedGroup = g }
-                )
-            }
-        }
-    }
-
-    private fun startQuestion(q: BankQuestion) {
-        current = Lesson(
-            topic = "${q.sutra} · ${q.topic}",
-            questionId = q.id, prompt = q.question,
-            anchor = q.anchor, edition = q.edition
-        )
-        persistActive()
-        openLessonFn?.invoke()
-    }
-
-    private fun startCustom(topic: String) {
-        current = Lesson(topic = topic)
-        persistActive()
-        openLessonFn?.invoke()
-    }
-
-    private var openLessonFn: (() -> Unit)? = null
-    private fun navigateLesson() { openLessonFn?.invoke() }
-    private var selectedGroup by mutableStateOf<TopicGroup?>(null)
-
-    private fun persistActive() {
-        prefs.edit().putString("active", current.toJson().toString()).apply()
-    }
-
-    private fun persistHistory() {
-        val arr = JSONArray().apply { history.take(30).forEach { put(it.toJson()) } }
-        prefs.edit().putString("completed", arr.toString()).apply()
-    }
-
-    private fun bankRef(): String = Tutors.bankRef(QuestionBank.byId(current.questionId))
-
-    /** 派题：未练优先、难度递进；exclude 用于课堂内"下一题"排除当前题。 */
-    private fun nextUp(excludeId: String?): BankQuestion? {
-        val practiced = history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
-        return QuestionBank.questions
-            .filter { it.id !in practiced && it.id != excludeId }
-            .minByOrNull { it.difficulty }
-    }
-
-    private data class Choice(val done: Boolean, val question: String, val options: List<String>)
-
-    private fun parseChoice(raw: String): Choice {
-        val j = JSONObject(raw)
-        if (j.optBoolean("done", false)) return Choice(true, "", emptyList())
-        val q = j.optString("question").trim()
-        require(q.isNotBlank()) { "AI 没有返回有效问题，请重试。" }
-        val arr = j.optJSONArray("options")
-        val opts = if (arr == null) emptyList()
-            else (0 until arr.length()).map { arr.optString(it).trim() }.filter { it.isNotBlank() }
-        return Choice(false, q, opts)
-    }
-
-    private fun persistDoubts() {
-        val arr = JSONArray().apply { doubts.take(200).forEach { put(it.toJson()) } }
-        prefs.edit().putString("doubts", arr.toString()).apply()
-    }
-
-    /** 原理4：评估中指出的"需要澄清的"自动沉淀为疑点（去重）。 */
-    private fun saveDoubtFrom(evaluationJson: String, lesson: Lesson) {
-        val issues = runCatching { JSONObject(evaluationJson).optString("issues").trim() }.getOrDefault("")
-        if (issues.isBlank()) return
-        if (doubts.any { it.questionId == lesson.questionId && it.text == issues }) return
-        doubts = listOf(Doubt(issues, lesson.questionId, lesson.topic)) + doubts
-        persistDoubts()
-    }
-
-    fun toggleDoubt(target: Doubt) {
-        doubts = doubts.map {
-            if (it.createdAt == target.createdAt && it.text == target.text)
-                it.copy(resolved = !it.resolved, resolvedAt = if (!it.resolved) System.currentTimeMillis() else 0)
-            else it
-        }
-        persistDoubts()
-    }
-
-    /** 原理3+4：评估完成即沉淀疑点。 */
-    private suspend fun runEvaluator(key: String, next: Lesson): Lesson {
-        val judgement = client.chat(
-            key = key, system = Tutors.evaluator,
-            input = Tutors.transcript(next) + "\n" + bankRef() +
-                "\n现在请按指定 json 结构评价本次讲解。",
-            json = true, maxTokens = 1600
-        )
-        JSONObject(judgement) // only move to next stage for valid JSON
-        saveDoubtFrom(judgement, next)
-        return next.copy(stage = "REVIEW", currentQuestion = "", currentOptions = emptyList(), evaluationJson = judgement)
-    }
-
-    /** 原理：课堂是回路——明辨的薄弱处把用户打回学生面前。 */
-    private fun loopBack(weakPoint: String) {
-        val key = secrets.read()
-        if (key.isNullOrBlank()) { error = "请先配置 API Key"; return }
-        error = ""
-        busy = true
-        scope.launch {
-            try {
-                val c = parseChoice(client.chat(
-                    key = key, system = Tutors.studentChoice,
-                    input = Tutors.transcript(current) + "\n" + bankRef() +
-                        "\n助教指出用户讲解中最薄弱的一处：$weakPoint\n" +
-                        "请只针对这一处，以学生身份提出一个追问（选择题形式）。",
-                    json = true, maxTokens = 480
-                ))
-                current = current.copy(
-                    stage = "ASK", currentQuestion = c.question, currentOptions = c.options,
-                    updatedAt = System.currentTimeMillis()
-                )
-                persistActive()
-            } catch (t: Exception) {
-                error = t.localizedMessage ?: "请求失败，请重试"
-            } finally { busy = false }
-        }
-    }
-
-    private fun send(input: String) {
-        if (busy || input.isBlank()) return
-        val key = secrets.read()
-        if (key.isNullOrBlank()) {
-            error = "先到设置页面填入自己的 DeepSeek API Key"
-            return
-        }
-        error = ""
-        busy = true
-        scope.launch {
-            try {
-                when (current.stage) {
-                    "INTRO" -> {
-                        val next = current.copy(firstExplanation = input, updatedAt = System.currentTimeMillis())
-                        val c = parseChoice(client.chat(
-                            key = key, system = Tutors.studentChoice,
-                            input = Tutors.transcript(next) + "\n" + bankRef() +
-                                "\n这是首次讲解，请提出第1个关键追问（选择题形式）。",
-                            json = true, maxTokens = 480
-                        ))
-                        current = if (c.done) runEvaluator(key, next)
-                                  else next.copy(stage = "ASK", currentQuestion = c.question, currentOptions = c.options)
-                    }
-                    "ASK" -> {
-                        val addition = QA(current.currentQuestion, input, current.currentOptions)
-                        val next = current.copy(dialogue = current.dialogue + addition, updatedAt = System.currentTimeMillis())
-                        if (next.dialogue.size >= 4) {
-                            current = runEvaluator(key, next)
-                        } else {
-                            val c = parseChoice(client.chat(
-                                key = key, system = Tutors.studentChoice,
-                                input = Tutors.transcript(next) + "\n" + bankRef() +
-                                    "\n请判断用户的回答是否解除了你的疑惑：已解除则输出 done=true；" +
-                                    "未解除则提出下一个追问（选择题形式），不要重复前面的问题。",
-                                json = true, maxTokens = 480
-                            ))
-                            current = if (c.done) runEvaluator(key, next)
-                                      else next.copy(currentQuestion = c.question, currentOptions = c.options)
+                    questions = questions,
+                    dueCount = dueCount,
+                    busy = busy,
+                    error = error,
+                    hasKey = hasKey,
+                    speaking = speaking,
+                    onStartQuestion = { q -> vm.startQuestion(q); navigateLesson() },
+                    onCustomTopic = { t -> vm.startCustom(t); navigateLesson() },
+                    onOpenAttempt = { a -> vm.openAttempt(a); navigateLesson() },
+                    onResume = { navigateLesson() },
+                    onSend = vm::send,
+                    onRevise = vm::startRewrite,
+                    onLoop = vm::loopBack,
+                    onSaveKey = vm::saveKey,
+                    onDeleteKey = vm::deleteKey,
+                    onClearError = vm::clearError,
+                    onSpeech = { phrase -> speak(phrase) },
+                    onToggleDoubt = vm::toggleDoubt,
+                    onOpenDoubtSource = vm::openDoubtSource,
+                    onReviewDoubt = vm::reviewDoubt,
+                    onExport = { kind ->
+                        lifecycleScope.launch {
+                            val (name, content, mime) = when (kind) {
+                                "json" -> Triple(
+                                    Exporter.stampName("mingxin-data", "json"),
+                                    Exporter.toJson(vm.repositoryForExport()), "application/json"
+                                )
+                                else -> Triple(
+                                    Exporter.stampName("mingxin-notes", "md"),
+                                    Exporter.toMarkdown(vm.repositoryForExport()), "text/markdown"
+                                )
+                            }
+                            shareFile(name, content, mime)
                         }
                     }
-                    "REWRITE" -> {
-                        val response = client.chat(
-                            key = key, system = Tutors.review,
-                            input = Tutors.transcript(current) +
-                                "\n助教首次评价：${current.evaluationJson}" +
-                                "\n用户第二次讲解：$input",
-                            maxTokens = 850
-                        )
-                        current = current.copy(
-                            stage = "DONE", revisedExplanation = input,
-                            finalFeedback = response, updatedAt = System.currentTimeMillis()
-                        )
-                        history = listOf(current) + history.filterNot { it.questionId == current.questionId && it.questionId.isNotBlank() }
-                        persistHistory()
-                    }
-                }
-                persistActive()
-            } catch (t: Exception) {
-                error = t.localizedMessage ?: "请求失败，请检查网络及账户余额"
-            } finally { busy = false }
-        }
-    }
-
-    /** 导出全部研习记录为 Markdown，供用户送其他大模型验证。 */
-    private fun exportNotes() {
-        val md = buildNotesMarkdown()
-        val dir = File(cacheDir, "exports").apply { mkdirs() }
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.getDefault()).format(Date())
-        val file = File(dir, "mingxin-notes-$stamp.md")
-        runCatching { file.writeText(md) }.onFailure {
-            error = "导出失败：${it.localizedMessage}"; return
-        }
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "明心研习笔记 $stamp")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        runCatching { startActivity(Intent.createChooser(send, "导出笔记")) }
-            .onFailure { error = "没有可用的分享应用" }
-    }
-
-    private fun buildNotesMarkdown(): String = buildString {
-        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-        appendLine("# 明心研习笔记")
-        appendLine("导出时间：${fmt.format(Date())}；共 ${history.size} 节")
-        appendLine()
-        val open = doubts.filter { !it.resolved }
-        val closed = doubts.filter { it.resolved }
-        appendLine("## 疑点（未决 ${open.size} / 已消 ${closed.size}）")
-        appendLine()
-        (open + closed).forEach { d ->
-            appendLine("- [${if (d.resolved) "已消" else "未决"}] ${d.text}（${d.topic}）")
-        }
-        appendLine()
-        appendLine("## 研习记录")
-        history.forEachIndexed { i, l ->
-            appendLine()
-            appendLine("### ${i + 1}. ${l.topic}")
-            appendLine("- 时间：${fmt.format(Date(l.updatedAt))}")
-            if (l.prompt.isNotBlank()) {
-                appendLine("- 研习问题：${l.prompt}")
-                if (l.edition.isNotBlank()) appendLine("- 依据底本：${l.edition}；经文锚点：${l.anchor}")
-            }
-            appendLine("- 我的初讲：${l.firstExplanation}")
-            l.dialogue.forEachIndexed { j, qa ->
-                appendLine("- 追问${j + 1}（善问）：${qa.question}")
-                if (qa.options.isNotEmpty()) {
-                    appendLine("  - 候选：${qa.options.joinToString("；")}")
-                    appendLine("  - 我的选择：${qa.answer}")
-                } else {
-                    appendLine("  - 我的回答：${qa.answer}")
-                }
-            }
-            runCatching { JSONObject(l.evaluationJson) }.getOrNull()?.let { j ->
-                appendLine(
-                    "- 评分（0-5）：义理 ${j.optInt("accuracy")} / 逻辑 ${j.optInt("logic")} / " +
-                        "清晰 ${j.optInt("clarity")} / 应用 ${j.optInt("application")}"
                 )
-                appendLine("- 已经理解的：${j.optString("strengths")}")
-                appendLine("- 需要澄清的：${j.optString("issues")}")
-                appendLine("- 建议核查经论：${j.optString("verify")}")
-                appendLine("- 再讲一次的提示：${j.optString("suggestion")}")
             }
-            if (l.revisedExplanation.isNotBlank()) appendLine("- 我的重讲：${l.revisedExplanation}")
-            if (l.finalFeedback.isNotBlank()) appendLine("- 助教总结：${l.finalFeedback}")
         }
-        appendLine()
-        appendLine("> 注：以上问答与评估由 AI（deepseek-flash）生成，义理未经专家校勘，引用请回查原典。")
+    }
+
+    private fun shareFile(name: String, content: String, mime: String) {
+        runCatching {
+            val file = Exporter.writeTemp(this, name, content)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "明心导出 $name")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "导出"))
+        }
     }
 
     private fun speak(text: String) {
@@ -436,15 +153,27 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        tts?.stop(); tts?.shutdown(); scope.cancel()
+        tts?.stop(); tts?.shutdown()
         super.onDestroy()
+    }
+
+    private var openLessonFn: (() -> Unit)? = null
+    private fun navigateLesson() { openLessonFn?.invoke() }
+}
+
+@Composable
+private fun LoadingScreen() {
+    androidx.compose.foundation.layout.Box(
+        modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(color = Jade)
     }
 }
 
 /* ------------------------------------------------------------------ */
 /*  Scaffold, navigation and home                                     */
 /* ------------------------------------------------------------------ */
-
 @Composable
 private fun NavEntry(
     key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -466,34 +195,34 @@ private fun NavEntry(
 private fun MainUI(
     page: String,
     navController: androidx.navigation.NavHostController,
-    lesson: Lesson,
-    history: List<Lesson>,
+    lesson: LessonUi,
+    attempts: List<AttemptEntity>,
+    doubts: List<DoubtEntity>,
+    questions: List<QuestionEntity>,
+    dueCount: Int,
     busy: Boolean,
     error: String,
     hasKey: Boolean,
-    onOpenLesson: () -> Unit,
     speaking: String,
-    onStartQuestion: (BankQuestion) -> Unit,
+    onStartQuestion: (QuestionEntity) -> Unit,
     onCustomTopic: (String) -> Unit,
+    onOpenAttempt: (AttemptEntity) -> Unit,
     onResume: () -> Unit,
     onSend: (String) -> Unit,
     onRevise: () -> Unit,
+    onLoop: (String) -> Unit,
     onSaveKey: (String) -> Unit,
     onDeleteKey: () -> Unit,
+    onClearError: () -> Unit,
     onSpeech: (String) -> Unit,
-    onOpenHistory: (Lesson) -> Unit,
-    doubts: List<Doubt>,
-    onToggleDoubt: (Doubt) -> Unit,
-    onLoop: (String) -> Unit,
-    nextUp: BankQuestion?,
-    onExportNotes: () -> Unit,
-    onPractice: () -> Unit,
-    selectedGroup: TopicGroup?,
-    onSelectGroup: (TopicGroup) -> Unit
+    onToggleDoubt: (DoubtEntity) -> Unit,
+    onReviewDoubt: (DoubtEntity, Int) -> Unit,
+    onExport: (String) -> Unit
 ) {
     var keyDraft by remember { mutableStateOf("") }
     var customDraft by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
+    var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
 
     if (showCustom) {
         AlertDialog(
@@ -580,7 +309,8 @@ private fun MainUI(
             ) {
                 composable("home") {
                     HomeScreen(
-                        active = lesson, hasKey = hasKey, history = history, doubts = doubts,
+                        active = lesson, hasKey = hasKey, history = attempts, doubts = doubts,
+                        questions = questions, dueCount = dueCount,
                         onResume = onResume, onSettings = { navController.navigate("settings") { popUpTo("home") } },
                         onBrowse = { navController.navigate("browse") },
                         onStart = onStartQuestion,
@@ -590,7 +320,8 @@ private fun MainUI(
                 }
                 composable("browse") {
                     BrowseScreen(
-                        onPickGroup = { g -> onSelectGroup(g); navController.navigate("topic") },
+                        questions = questions,
+                        onPickGroup = { g -> selectedGroup = g; navController.navigate("topic") },
                         onCustom = { showCustom = true }
                     )
                 }
@@ -603,10 +334,16 @@ private fun MainUI(
                     }
                 }
                 composable("doubts") {
-                    DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
+                    DoubtsScreen(
+                        doubts = doubts,
+                        onToggle = onToggleDoubt,
+                        onReview = onReviewDoubt,
+                        questions = questions,
+                        onOpen = { q -> onStartQuestion(q) }
+                    )
                 }
                 composable("history") {
-                    HistoryScreen(history, { l -> onOpenHistory(l) }, onExportNotes)
+                    HistoryScreen(attempts, { l -> onOpenAttempt(l) }, { onExport("markdown") })
                 }
                 composable("settings") {
                     SettingsScreen(hasKey, keyDraft, { keyDraft = it },
@@ -614,8 +351,9 @@ private fun MainUI(
                 }
                 composable("lesson") {
                     LessonScreen(
-                        lesson, busy, error, speaking, onSend, onRevise, onLoop, onSpeech,
-                        nextUp = nextUp, onNext = onStartQuestion
+                        lesson = lesson, busy = busy, error = error, speaking = speaking,
+                        onSend = onSend, onRevise = onRevise, onLoop = onLoop, readAloud = onSpeech,
+                        questions = questions, history = attempts, onNext = onStartQuestion
                     )
                 }
             }
@@ -630,7 +368,7 @@ private fun greeting(): String {
 }
 
 /** 连续研习天数：以今天（或昨天）结尾往回数。 */
-private fun streakOf(history: List<Lesson>): Int {
+private fun streakOf(history: List<AttemptEntity>): Int {
     val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val days = history.map { fmt.format(Date(it.updatedAt)) }.toSet()
     val cal = Calendar.getInstance()
@@ -642,22 +380,27 @@ private fun streakOf(history: List<Lesson>): Int {
 
 @Composable
 private fun HomeScreen(
-    active: Lesson, hasKey: Boolean, history: List<Lesson>, doubts: List<Doubt>,
+    active: LessonUi, hasKey: Boolean, history: List<AttemptEntity>, doubts: List<DoubtEntity>,
+    questions: List<QuestionEntity>, dueCount: Int,
     onResume: () -> Unit, onSettings: () -> Unit, onBrowse: () -> Unit,
-    onStart: (BankQuestion) -> Unit, onDoubts: () -> Unit, onCustom: () -> Unit
+    onStart: (QuestionEntity) -> Unit, onDoubts: () -> Unit, onCustom: () -> Unit
 ) {
     val practiced = remember(history.size) {
         history.map { it.questionId }.filter { it.isNotBlank() }.toSet()
     }
     var candidateId by rememberSaveable { mutableStateOf("") }
     val candidate = candidateId.takeIf { it.isNotBlank() }
-        ?.let { QuestionBank.byId(it) }?.takeIf { it.id !in practiced }
-    val remaining = QuestionBank.questions.filter { it.id !in practiced }
-    val next = candidate ?: remaining.minByOrNull { it.difficulty } ?: QuestionBank.randomQuestion()
+        ?.let { questions.byId(it) }?.takeIf { it.id !in practiced }
+    val remaining = questions.filter { it.id !in practiced }
+    val next = candidate ?: remaining.minByOrNull { it.difficulty } ?: questions.randomOrNull()
+    if (next == null) {
+        Column(Modifier.fillMaxSize().padding(24.dp)) { Text("题库为空", color = Ink70) }
+        return
+    }
     val streak = remember(history.size) { streakOf(history) }
     val openDoubts = doubts.count { !it.resolved }
     val inFlight = active.topic.isNotBlank() && active.stage != "DONE"
-    var pendingStart by remember { mutableStateOf<BankQuestion?>(null) }
+    var pendingStart by remember { mutableStateOf<QuestionEntity?>(null) }
     var confirmAbandon by remember { mutableStateOf(false) }
     if (confirmAbandon) {
         val target = pendingStart
@@ -812,10 +555,11 @@ private fun QuickChip(
 
 @Composable
 private fun BrowseScreen(
+    questions: List<QuestionEntity>,
     onPickGroup: (TopicGroup) -> Unit, onCustom: () -> Unit
 ) {
-    var sutra by remember { mutableStateOf(QuestionBank.sutras.firstOrNull().orEmpty()) }
-    val topics = remember(sutra) { QuestionBank.topicsOf(sutra) }
+    var sutra by remember { mutableStateOf(questions.sutrasOf().firstOrNull().orEmpty()) }
+    val topics = remember(sutra, questions.size) { questions.topicsOf(sutra) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
@@ -826,7 +570,7 @@ private fun BrowseScreen(
                 fontWeight = FontWeight.Bold, color = Ink)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuestionBank.sutras.forEach { name ->
+                questions.sutrasOf().forEach { name ->
                     val selected = name == sutra
                     Surface(
                         color = if (selected) Jade else Color.Transparent,
@@ -872,7 +616,7 @@ private fun BrowseScreen(
 }
 
 @Composable
-private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
+private fun TopicScreen(group: TopicGroup, onStart: (QuestionEntity) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
@@ -952,7 +696,7 @@ private fun StageLabel(stage: String, answered: Int) {
 }
 
 @Composable
-private fun QuestionHero(lesson: Lesson) {
+private fun QuestionHero(lesson: LessonUi) {
     val compact = stageIndex(lesson.stage) > 0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1075,11 +819,16 @@ private fun UserBubble(text: String) {
 
 @Composable
 private fun LessonScreen(
-    lesson: Lesson, busy: Boolean, error: String, speaking: String,
+    lesson: LessonUi, busy: Boolean, error: String, speaking: String,
     onSend: (String) -> Unit, onRevise: () -> Unit, onLoop: (String) -> Unit,
     readAloud: (String) -> Unit,
-    nextUp: BankQuestion?, onNext: (BankQuestion) -> Unit
+    questions: List<QuestionEntity>, history: List<AttemptEntity>,
+    onNext: (QuestionEntity) -> Unit
 ) {
+    val practiced = remember(history.size) { history.map { it.questionId }.filter { it.isNotBlank() }.toSet() }
+    val nextUp = remember(questions.size, practiced, lesson.questionId) {
+        questions.filter { it.id !in practiced && it.id != lesson.questionId }.minByOrNull { it.difficulty }
+    }
     var input by rememberSaveable(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
     var selectedOption by rememberSaveable(lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf(-1) }
     val listState = rememberLazyListState()
@@ -1240,7 +989,7 @@ private fun LessonScreen(
 
 @Composable
 private fun ChoicePanel(
-    lesson: Lesson,
+    lesson: LessonUi,
     selectedOption: Int,
     onSelect: (Int) -> Unit,
     input: String,
@@ -1435,101 +1184,12 @@ private fun EvaluationCard(jsonText: String) {
 /*  Doubts: the core asset — open/resolved learning state (原理4)     */
 /* ------------------------------------------------------------------ */
 
-@Composable
-private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
-    val open = doubts.filter { !it.resolved }
-    val closed = doubts.filter { it.resolved }
-    if (doubts.isEmpty()) {
-        Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center) {
-            Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Jade, modifier = Modifier.size(44.dp))
-            Spacer(Modifier.height(12.dp))
-            Text("尚无疑点", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("课堂评估中发现的薄弱处会自动沉淀到这里。", fontSize = 13.sp, color = Ink70)
-        }
-    } else {
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                Text(
-                    "未决疑点 ${open.size}",
-                    fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = Ink
-                )
-                if (open.isEmpty()) {
-                    Text("全部消除，境界日进。", color = Jade, fontSize = 13.sp)
-                }
-                Spacer(Modifier.height(4.dp))
-            }
-            items(open, key = { "o${it.createdAt}-${it.text.hashCode()}" }) { d ->
-                DoubtCard(d, onToggle, onOpen)
-            }
-            if (closed.isNotEmpty()) {
-                item {
-                    Spacer(Modifier.height(8.dp))
-                    Text("已消除 ${closed.size}", color = Ink70, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
-                items(closed, key = { "c${it.createdAt}-${it.text.hashCode()}" }) { d ->
-                    DoubtCard(d, onToggle, onOpen)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
-    val source = QuestionBank.byId(d.questionId)
-    Surface(
-        color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 2.dp,
-        border = BorderStroke(1.dp, if (d.resolved) Ink12 else Gold.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth().clickable { if (source != null && !d.resolved) onOpen(source) }
-    ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (d.resolved) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                contentDescription = if (d.resolved) "标记为未决" else "标记为已消除",
-                tint = if (d.resolved) Jade else Gold,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    d.text, fontSize = 14.sp, lineHeight = 21.sp, color = if (d.resolved) Ink70 else Ink,
-                    maxLines = 3, overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    "${d.topic} · " + SimpleDateFormat("MM-dd", Locale.getDefault()).format(Date(d.createdAt)),
-                    fontSize = 12.sp, color = Ink70, maxLines = 1
-                )
-            }
-            if (source != null) {
-                Text("去研习", color = Jade, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable { onOpen(source) })
-            } else {
-                Text(if (d.resolved) "已消除" else "未决", color = Ink70, fontSize = 12.sp)
-            }
-            Spacer(Modifier.width(8.dp))
-            IconButton(onClick = { onToggle(d) }, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    if (d.resolved) Icons.Default.Refresh else Icons.Default.Check,
-                    contentDescription = if (d.resolved) "标记为未决" else "标记为已消除",
-                    tint = if (d.resolved) Ink70 else Jade,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
-}
-
 /* ------------------------------------------------------------------ */
 /*  History and settings                                              */
 /* ------------------------------------------------------------------ */
 
 @Composable
-private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExport: () -> Unit) {
+private fun HistoryScreen(history: List<AttemptEntity>, open: (AttemptEntity) -> Unit, onExport: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 2.dp),
