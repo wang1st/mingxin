@@ -26,6 +26,20 @@ class Repository(private val ctx: Context) {
     suspend fun initialize() {
         seedQuestions()
         if (metaDao.get(KEY_MIGRATED) == null) migrateLegacy()
+        scheduleUnscheduledDoubts()
+    }
+
+    /**
+     * 兜底自愈：未决但没排程的疑点（旧版本迁入 / 极端情况）立即进入复习队列。
+     * 幂等，每次启动跑一遍很便宜。
+     */
+    private suspend fun scheduleUnscheduledDoubts() {
+        val now = System.currentTimeMillis()
+        doubtDao.all()
+            .filter { !it.resolved && it.nextReviewAt == 0L }
+            .forEach { d ->
+                doubtDao.upsert(d.copy(nextReviewAt = now, intervalDays = 1, ease = 2.5f))
+            }
     }
 
     /** 从 assets 导入题库；已有则按 id REPLACE 做增量更新（经文修订随版本下发） */
