@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.mingxin.feynman.data.DoubtEntity
 import com.mingxin.feynman.data.QuestionEntity
 import com.mingxin.feynman.data.byId
+import com.mingxin.feynman.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

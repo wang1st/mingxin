@@ -1,5 +1,4 @@
 package com.mingxin.feynman
-package com.mingxin.feynman
 
 import android.app.Activity
 import android.content.Intent
@@ -61,6 +60,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import org.json.JSONObject
 import com.mingxin.feynman.data.AttemptEntity
 import com.mingxin.feynman.data.DoubtEntity
 import com.mingxin.feynman.data.Exporter
