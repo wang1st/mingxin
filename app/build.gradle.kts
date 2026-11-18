@@ -22,8 +22,8 @@ android {
         applicationId = "com.mingxin.feynman"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.7.0"
+        versionCode = 24
+        versionName = "0.7.1"
     }
 
     compileOptions {
@@ -48,5 +48,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.navigation:navigation-compose:2.9.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 }

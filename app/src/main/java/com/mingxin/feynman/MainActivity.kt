@@ -101,29 +101,6 @@ class MainActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var tts: TextToSpeech? = null
 
-    private var page by mutableStateOf("home")
-    private var navStack by mutableStateOf(listOf<String>())
-
-    /** 页签为平级（切页签清栈），其余为下钻（压栈）。 */
-    private fun navigateTo(dest: String) {
-        val tabs = setOf("home", "doubts", "history", "settings")
-        if (dest in tabs) {
-            navStack = emptyList()
-            page = dest
-        } else {
-            if (page != dest) navStack = navStack + page
-            page = dest
-        }
-        error = ""
-    }
-
-    private fun navigateBack(): Boolean {
-        if (navStack.isEmpty()) return false
-        page = navStack.last()
-        navStack = navStack.dropLast(1)
-        error = ""
-        return true
-    }
     private var current by mutableStateOf(Lesson())
     private var history by mutableStateOf(listOf<Lesson>())
     private var busy by mutableStateOf(false)
@@ -134,11 +111,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (!navigateBack()) { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
-            }
-        })
         QuestionBank.load(this)
         hasApiKey = secrets.hasKey()
         current = runCatching { Lesson.fromJson(JSONObject(prefs.getString("active", "{}") ?: "{}")) }.getOrDefault(Lesson())
@@ -167,14 +139,15 @@ class MainActivity : ComponentActivity() {
                 surface = Color.White, onSurface = Ink, secondary = Gold,
                 error = Vermilion
             )) {
+                val navController = androidx.navigation.compose.rememberNavController()
+                openLessonFn = { pushLesson(navController) }
                 MainUI(
-                    page = page, lesson = current, history = history, busy = busy,
+                    page = page, navController = navController, lesson = current, history = history, busy = busy,
                     error = error, hasKey = hasApiKey, speaking = speaking,
-                    onNavigate = ::navigateTo,
-                    onBackRequest = ::navigateBack,
+                    onOpenLesson = { navigateLesson() },
                     onStartQuestion = ::startQuestion,
                     onCustomTopic = ::startCustom,
-                    onResume = { navigateTo("lesson") },
+                    onResume = { navigateLesson() },
                     onSend = ::send,
                     onRevise = {
                         current = current.copy(stage = "REWRITE", updatedAt = System.currentTimeMillis())
@@ -190,13 +163,15 @@ class MainActivity : ComponentActivity() {
                     },
                     onDeleteKey = { secrets.delete(); hasApiKey = false },
                     onSpeech = { phrase -> speak(phrase) },
-                    onOpenHistory = { selected -> current = selected; navigateTo("lesson") },
+                    onOpenHistory = { selected -> current = selected; navigateLesson() },
                     doubts = doubts,
                     onExportNotes = { exportNotes() },
                     onToggleDoubt = ::toggleDoubt,
                     onLoop = ::loopBack,
                     nextUp = nextUp(current.questionId),
-                    onPractice = { startQuestion(nextUp(null) ?: QuestionBank.randomQuestion()) }
+                    onPractice = { startQuestion(nextUp(null) ?: QuestionBank.randomQuestion()) },
+                    selectedGroup = selectedGroup,
+                    onSelectGroup = { g -> selectedGroup = g }
                 )
             }
         }
@@ -209,14 +184,19 @@ class MainActivity : ComponentActivity() {
             anchor = q.anchor, edition = q.edition
         )
         persistActive()
-        navigateTo("lesson")
     }
 
     private fun startCustom(topic: String) {
         current = Lesson(topic = topic)
         persistActive()
-        navigateTo("lesson")
     }
+
+    private var openLessonFn: (() -> Unit)? = null
+    private fun navigateLesson() { openLessonFn?.invoke() }
+    private fun pushLesson(nc: androidx.navigation.NavHostController) {
+        nc.navigate("lesson") { launchSingleTop = true }
+    }
+    private var selectedGroup by mutableStateOf<TopicGroup?>(null)
 
     private fun persistActive() {
         prefs.edit().putString("active", current.toJson().toString()).apply()
@@ -461,50 +441,17 @@ class MainActivity : ComponentActivity() {
 /*  Scaffold, navigation and home                                     */
 /* ------------------------------------------------------------------ */
 
-/** 应用内自处理的右滑返回：不依赖系统 back dispatch（MIUI 手势对该链路支持有坑）。
- *  key 含 page 且回调经 rememberUpdatedState 保鲜，杜绝首通后 stale capture。 */
-@Composable
-private fun Modifier.swipeBack(enabled: Boolean, page: String, onBack: () -> Unit): Modifier {
-    val currentOnBack = rememberUpdatedState(onBack)
-    return this.pointerInput(enabled, page) {
-        if (!enabled) return@pointerInput
-        var acc = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { acc = 0f },
-            onHorizontalDrag = { _, dragAmount -> acc += dragAmount },
-            onDragEnd = { if (acc > 180f) currentOnBack.value() },
-            onDragCancel = { acc = 0f }
-        )
-    }
-}
-
-@Composable
-private fun NavEntry(
-    key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
-    page: String, modifier: Modifier = Modifier, onClick: () -> Unit
-) {
-    val selected = page == key
-    Column(
-        modifier.clickable(onClick = onClick).padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(icon, contentDescription = label, tint = if (selected) Jade else Ink70, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = if (selected) Jade else Ink70, maxLines = 1)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainUI(
     page: String,
+    navController: androidx.navigation.NavHostController,
     lesson: Lesson,
     history: List<Lesson>,
     busy: Boolean,
     error: String,
     hasKey: Boolean,
     onNavigate: (String) -> Unit,
-    onBackRequest: () -> Boolean,
+    onOpenLesson: () -> Unit,
     speaking: String,
     onStartQuestion: (BankQuestion) -> Unit,
     onCustomTopic: (String) -> Unit,
@@ -520,9 +467,10 @@ private fun MainUI(
     onLoop: (String) -> Unit,
     nextUp: BankQuestion?,
     onExportNotes: () -> Unit,
-    onPractice: () -> Unit
+    onPractice: () -> Unit,
+    selectedGroup: TopicGroup?,
+    onSelectGroup: (TopicGroup) -> Unit
 ) {
-    var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var keyDraft by remember { mutableStateOf("") }
     var customDraft by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
@@ -548,10 +496,6 @@ private fun MainUI(
         )
     }
 
-    val goBack: () -> Unit = {
-        if (!onBackRequest() && page != "home") onNavigate("home")
-    }
-
     Scaffold(
         topBar = {
             if (page == "lesson" || page == "topic" || page == "browse") TopAppBar(
@@ -562,7 +506,7 @@ private fun MainUI(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = goBack) {
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -600,7 +544,6 @@ private fun MainUI(
             Modifier
                 .fillMaxSize()
                 .padding(inset)
-                .swipeBack(enabled = page != "home", page = page, onBack = goBack)
         ) {
             if (error.isNotBlank() && page != "lesson") {
                 Surface(color = Vermilion12, modifier = Modifier.fillMaxWidth()) {
@@ -610,7 +553,16 @@ private fun MainUI(
                     )
                 }
             }
-            when (page) {
+            if (page == "lesson") {
+                LessonScreen(
+                    lesson, busy, error, speaking, onSend, onRevise, onLoop, onSpeech,
+                    nextUp = nextUp, onNext = onStartQuestion
+                )
+            } else androidx.navigation.compose.NavHost(
+                navController = navController,
+                startDestination = "home",
+                modifier = Modifier.fillMaxSize()
+            ) { when (page) {
                 "home" -> HomeScreen(
                     active = lesson, hasKey = hasKey, history = history, doubts = doubts,
                     onResume = onResume, onSettings = { onNavigate("settings") },
@@ -620,7 +572,7 @@ private fun MainUI(
                     onCustom = { showCustom = true }
                 )
                 "browse" -> BrowseScreen(
-                    onPickGroup = { selectedGroup = it; onNavigate("topic") },
+                    onPickGroup = { g -> onSelectGroup(g); onNavigate("topic") },
                     onCustom = { showCustom = true }
                 )
                 "topic" -> if (selectedGroup != null) {
@@ -629,15 +581,11 @@ private fun MainUI(
                     LaunchedEffect(Unit) { onNavigate("home") }
                     Spacer(Modifier.fillMaxSize())
                 }
-                "lesson" -> LessonScreen(
-                    lesson, busy, error, speaking, onSend, onRevise, onLoop, onSpeech,
-                    nextUp = nextUp, onNext = onStartQuestion
-                )
                 "doubts" -> DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
-                "history" -> HistoryScreen(history, onOpenHistory, onExportNotes)
+                "history" -> HistoryScreen(history, { l -> onOpenHistory(l) }, onExportNotes)
                 "settings" -> SettingsScreen(hasKey, keyDraft, { keyDraft = it },
                     { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
-            }
+            } }
         }
     }
 }
