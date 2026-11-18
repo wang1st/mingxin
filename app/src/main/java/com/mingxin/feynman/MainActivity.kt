@@ -101,6 +101,28 @@ class MainActivity : ComponentActivity() {
     private var tts: TextToSpeech? = null
 
     private var page by mutableStateOf("home")
+    private var navStack by mutableStateOf(listOf<String>())
+
+    /** 页签为平级（切页签清栈），其余为下钻（压栈）。 */
+    private fun navigateTo(dest: String) {
+        val tabs = setOf("home", "doubts", "history", "settings")
+        if (dest in tabs) {
+            navStack = emptyList()
+            page = dest
+        } else {
+            if (page != dest) navStack = navStack + page
+            page = dest
+        }
+        error = ""
+    }
+
+    private fun navigateBack(): Boolean {
+        if (navStack.isEmpty()) return false
+        page = navStack.last()
+        navStack = navStack.dropLast(1)
+        error = ""
+        return true
+    }
     private var current by mutableStateOf(Lesson())
     private var history by mutableStateOf(listOf<Lesson>())
     private var busy by mutableStateOf(false)
@@ -113,12 +135,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                when (page) {
-                    "topic" -> page = "browse"
-                    "browse", "lesson", "doubts", "history", "settings" -> page = "home"
-                    else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
-                }
-                error = ""
+                if (!navigateBack()) { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
             }
         })
         QuestionBank.load(this)
@@ -152,10 +169,11 @@ class MainActivity : ComponentActivity() {
                 MainUI(
                     page = page, lesson = current, history = history, busy = busy,
                     error = error, hasKey = hasApiKey, speaking = speaking,
-                    onNavigate = { page = it; error = "" },
+                    onNavigate = ::navigateTo,
+                    onBackRequest = ::navigateBack,
                     onStartQuestion = ::startQuestion,
                     onCustomTopic = ::startCustom,
-                    onResume = { page = "lesson" },
+                    onResume = { navigateTo("lesson") },
                     onSend = ::send,
                     onRevise = {
                         current = current.copy(stage = "REWRITE", updatedAt = System.currentTimeMillis())
@@ -171,7 +189,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onDeleteKey = { secrets.delete(); hasApiKey = false },
                     onSpeech = { phrase -> speak(phrase) },
-                    onOpenHistory = { selected -> current = selected; page = "lesson" },
+                    onOpenHistory = { selected -> current = selected; navigateTo("lesson") },
                     doubts = doubts,
                     onExportNotes = { exportNotes() },
                     onToggleDoubt = ::toggleDoubt,
@@ -190,13 +208,13 @@ class MainActivity : ComponentActivity() {
             anchor = q.anchor, edition = q.edition
         )
         persistActive()
-        page = "lesson"
+        navigateTo("lesson")
     }
 
     private fun startCustom(topic: String) {
         current = Lesson(topic = topic)
         persistActive()
-        page = "lesson"
+        navigateTo("lesson")
     }
 
     private fun persistActive() {
@@ -481,6 +499,7 @@ private fun MainUI(
     error: String,
     hasKey: Boolean,
     onNavigate: (String) -> Unit,
+    onBackRequest: () -> Boolean,
     speaking: String,
     onStartQuestion: (BankQuestion) -> Unit,
     onCustomTopic: (String) -> Unit,
@@ -525,11 +544,7 @@ private fun MainUI(
     }
 
     val goBack: () -> Unit = {
-        when (page) {
-            "topic" -> onNavigate("browse")
-            "browse", "lesson", "doubts", "history", "settings" -> onNavigate("home")
-            else -> {}
-        }
+        if (!onBackRequest() && page != "home") onNavigate("home")
     }
 
     Scaffold(
@@ -542,7 +557,7 @@ private fun MainUI(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { onNavigate("home") }) {
+                    IconButton(onClick = goBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
