@@ -140,8 +140,8 @@ class MainActivity : ComponentActivity() {
                 error = Vermilion
             )) {
                 val navController = androidx.navigation.compose.rememberNavController()
-                openLessonFn = { pushLesson(navController) }
-                val backStackEntry by navController.currentBackStackEntryAsState()
+                openLessonFn = { navController.navigate("lesson") { launchSingleTop = true } }
+                val backStackEntry by androidx.navigation.compose.currentBackStackEntryAsState(navController)
                 val page = backStackEntry?.destination?.route ?: "home"
                 MainUI(
                     page = page, navController = navController, lesson = current, history = history, busy = busy,
@@ -195,9 +195,6 @@ class MainActivity : ComponentActivity() {
 
     private var openLessonFn: (() -> Unit)? = null
     private fun navigateLesson() { openLessonFn?.invoke() }
-    private fun pushLesson(nc: androidx.navigation.NavHostController) {
-        nc.navigate("lesson") { launchSingleTop = true }
-    }
     private var selectedGroup by mutableStateOf<TopicGroup?>(null)
 
     private fun persistActive() {
@@ -516,7 +513,7 @@ private fun MainUI(
 
     Scaffold(
         topBar = {
-            if (page == "lesson" || page == "topic" || page == "browse") TopAppBar(
+            if (page != "home" && page != "doubts" && page != "history" && page != "settings") TopAppBar(
                 title = {
                     Text(
                         if (page == "lesson") "费曼课堂" else "明心",
@@ -546,7 +543,7 @@ private fun MainUI(
                     }
                 }
                 FloatingActionButton(
-                    onClick = onPractice,
+                    onClick = { navController.navigate("lesson") },
                     modifier = Modifier.align(Alignment.Center).offset(y = (-20).dp).size(56.dp),
                     shape = CircleShape,
                     containerColor = Jade, contentColor = Color.White,
@@ -571,39 +568,52 @@ private fun MainUI(
                     )
                 }
             }
-            if (page == "lesson") {
-                LessonScreen(
-                    lesson, busy, error, speaking, onSend, onRevise, onLoop, onSpeech,
-                    nextUp = nextUp, onNext = onStartQuestion
-                )
-            } else androidx.navigation.compose.NavHost(
+            androidx.navigation.compose.NavHost(
                 navController = navController,
                 startDestination = "home",
                 modifier = Modifier.fillMaxSize()
-            ) { when (page) {
-                "home" -> HomeScreen(
-                    active = lesson, hasKey = hasKey, history = history, doubts = doubts,
-                    onResume = onResume, onSettings = { navController.navigate("settings") { popUpTo("home") } },
-                    onBrowse = { navController.navigate("browse") },
-                    onStart = onStartQuestion,
-                    onDoubts = { navController.navigate("doubts") { popUpTo("home") } },
-                    onCustom = { showCustom = true }
-                )
-                "browse" -> BrowseScreen(
-                    onPickGroup = { g -> onSelectGroup(g); navController.navigate("topic") },
-                    onCustom = { showCustom = true }
-                )
-                "topic" -> if (selectedGroup != null) {
-                    TopicScreen(selectedGroup!!, onStartQuestion)
-                } else {
-                    LaunchedEffect(Unit) { navController.navigate("home") { popUpTo("home") { inclusive = true } } }
-                    Spacer(Modifier.fillMaxSize())
+            ) {
+                composable("home") {
+                    HomeScreen(
+                        active = lesson, hasKey = hasKey, history = history, doubts = doubts,
+                        onResume = onResume, onSettings = { navController.navigate("settings") { popUpTo("home") } },
+                        onBrowse = { navController.navigate("browse") },
+                        onStart = onStartQuestion,
+                        onDoubts = { navController.navigate("doubts") { popUpTo("home") } },
+                        onCustom = { showCustom = true }
+                    )
                 }
-                "doubts" -> DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
-                "history" -> HistoryScreen(history, { l -> onOpenHistory(l) }, onExportNotes)
-                "settings" -> SettingsScreen(hasKey, keyDraft, { keyDraft = it },
-                    { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
-            } }
+                composable("browse") {
+                    BrowseScreen(
+                        onPickGroup = { g -> onSelectGroup(g); navController.navigate("topic") },
+                        onCustom = { showCustom = true }
+                    )
+                }
+                composable("topic") {
+                    if (selectedGroup != null) {
+                        TopicScreen(selectedGroup!!, onStartQuestion)
+                    } else {
+                        LaunchedEffect(Unit) { navController.navigate("home") { popUpTo("home") { inclusive = true } } }
+                        Spacer(Modifier.fillMaxSize())
+                    }
+                }
+                composable("doubts") {
+                    DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
+                }
+                composable("history") {
+                    HistoryScreen(history, { l -> onOpenHistory(l) }, onExportNotes)
+                }
+                composable("settings") {
+                    SettingsScreen(hasKey, keyDraft, { keyDraft = it },
+                        { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
+                }
+                composable("lesson") {
+                    LessonScreen(
+                        lesson, busy, error, speaking, onSend, onRevise, onLoop, onSpeech,
+                        nextUp = nextUp, onNext = onStartQuestion
+                    )
+                }
+            }
         }
     }
 }
