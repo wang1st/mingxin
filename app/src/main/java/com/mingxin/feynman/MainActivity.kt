@@ -933,6 +933,7 @@ private fun QuestionHero(lesson: Lesson) {
             )
         } else {
             Text(
+                lesson.topic,
                 fontSize = if (compact) 18.sp else 21.sp,
                 fontWeight = FontWeight.Bold, color = Ink
             )
@@ -1042,34 +1043,19 @@ private fun LessonScreen(
     var input by rememberSaveable(lesson.stage, lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf("") }
     var selectedOption by rememberSaveable(lesson.currentQuestion, lesson.dialogue.size) { mutableStateOf(-1) }
     val listState = rememberLazyListState()
-    LaunchedEffect(lesson.stage, lesson.currentQuestion, lesson.dialogue.size, lesson.evaluationJson, lesson.finalFeedback) {
+    // 信息流钉底：IME 高度（键盘动画逐帧）或新消息到达时，把最后一条定位到可视区末端
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val imeBottom = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density)
+    LaunchedEffect(imeBottom, lesson.stage, lesson.currentQuestion, lesson.dialogue.size, lesson.evaluationJson, lesson.finalFeedback) {
         val count = listState.layoutInfo.totalItemsCount
-        if (count > 0) listState.animateScrollToItem(count - 1)
+        if (count > 0) listState.scrollToItem(count - 1)
     }
     val scope = rememberCoroutineScope()
-    val density = androidx.compose.ui.platform.LocalDensity.current
     val scrollToBottom: () -> Unit = {
         scope.launch {
             kotlinx.coroutines.delay(300)
             val count = listState.layoutInfo.totalItemsCount
             if (count > 0) listState.animateScrollToItem(count - 1)
-        }
-    }
-    // 键盘可见期间持续把信息流钉在底部：最后一条永远贴输入框上沿
-    LaunchedEffect(Unit) {
-        var wasVisible = false
-        androidx.compose.runtime.snapshotFlow {
-            androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0
-        }.collect { visible ->
-            if (visible && !wasVisible) {
-                kotlinx.coroutines.delay(150)
-                while (androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0) {
-                    val c = listState.layoutInfo.totalItemsCount
-                    if (c > 0) listState.scrollToItem(c - 1)
-                    kotlinx.coroutines.delay(100)
-                }
-            }
-            wasVisible = visible
         }
     }
     val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
