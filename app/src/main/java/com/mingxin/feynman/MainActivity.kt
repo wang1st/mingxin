@@ -460,15 +460,17 @@ class MainActivity : ComponentActivity() {
 /*  Scaffold, navigation and home                                     */
 /* ------------------------------------------------------------------ */
 
-/** 应用内自处理的右滑返回：不依赖系统 back dispatch（MIUI 手势对该链路支持有坑）。 */
-private fun Modifier.swipeBack(enabled: Boolean, onBack: () -> Unit): Modifier =
-    this.pointerInput(enabled) {
+/** 应用内自处理的右滑返回：不依赖系统 back dispatch（MIUI 手势对该链路支持有坑）。
+ *  key 含 page 且回调经 rememberUpdatedState 保鲜，杜绝首通后 stale capture。 */
+private fun Modifier.swipeBack(enabled: Boolean, page: String, onBack: () -> Unit): Modifier =
+    this.pointerInput(enabled, page) {
         if (!enabled) return@pointerInput
+        val currentOnBack = androidx.compose.runtime.rememberUpdatedState(onBack)
         var acc = 0f
         detectHorizontalDragGestures(
             onDragStart = { acc = 0f },
             onHorizontalDrag = { _, dragAmount -> acc += dragAmount },
-            onDragEnd = { if (acc > 180f) onBack() },
+            onDragEnd = { if (acc > 180f) currentOnBack.value() },
             onDragCancel = { acc = 0f }
         )
     }
@@ -595,7 +597,7 @@ private fun MainUI(
             Modifier
                 .fillMaxSize()
                 .padding(inset)
-                .swipeBack(enabled = page != "home", onBack = goBack)
+                .swipeBack(enabled = page != "home", page = page, onBack = goBack)
         ) {
             if (error.isNotBlank() && page != "lesson") {
                 Surface(color = Vermilion12, modifier = Modifier.fillMaxWidth()) {
