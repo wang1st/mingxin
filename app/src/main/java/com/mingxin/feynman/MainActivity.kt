@@ -134,7 +134,12 @@ class MainActivity : ComponentActivity() {
                 val backStackEntry by navController.currentBackStackEntryFlow.collectAsState(initial = null)
                 val page = backStackEntry?.destination?.route ?: "home"
 
-                if (!ready) {
+                if (true) {
+                    Box(Modifier.fillMaxSize().background(Paper), contentAlignment = Alignment.Center) {
+                        Text("DEBUG ready=$ready err=$error q=${questions.size} ins=${insights.size}",
+                            color = Ink, fontSize = 14.sp)
+                    }
+                } else if (!ready) {
                     LoadingScreen()
                 } else {
                     MainUI(
