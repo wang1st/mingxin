@@ -28,3 +28,6 @@ val Ink8 = Ink.copy(alpha = 0.08f)
 val Jade10 = Jade.copy(alpha = 0.10f)
 val Gold12 = Gold.copy(alpha = 0.12f)
 val Vermilion12 = Vermilion.copy(alpha = 0.12f)
+
+/** 输入区底色：比 Paper 更亮，与内容区区分 */
+val AppSurface = Color(0xFFFFFFFF)

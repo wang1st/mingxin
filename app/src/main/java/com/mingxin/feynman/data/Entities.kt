@@ -5,8 +5,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * 题库题目。从 assets 种子导入，可被后续版本增量补丁更新。
- * 主键用题库自带的稳定 id（如 H-003），不是自增，保证跨设备一致。
+ * 题库题目。种子来自 assets，可增量更新。
  */
 @Entity(tableName = "question")
 data class QuestionEntity(
@@ -19,86 +18,97 @@ data class QuestionEntity(
     val anchor: String,
     val keyPoints: String,
     val misconception: String,
-    val followups: String,      // \n 分隔，Room 不存 List
+    val followups: String,
     val grader: String,
     val taisho: String,
     val edition: String,
-    /** 题库版本号，用于增量更新对比 */
     val bankVersion: Int = 1
 )
 
 /**
- * 一次研习尝试 = 学习系统的核心资产。
- * 永不截断、永不过期。UUID 主键保证未来可导出/合并。
+ * 一节课。费曼闭环的容器：立题 → 初讲 → 被追问 → 认领卡点 → 重讲。
+ * 全程留痕，原话永不删改。
  */
 @Entity(
-    tableName = "attempt",
+    tableName = "session",
     indices = [Index("questionId"), Index("startedAt"), Index("finishedAt")]
 )
-data class AttemptEntity(
+data class SessionEntity(
     @PrimaryKey val id: String,
-    /** 题库题 id；自定义课题为空串 */
     val questionId: String,
     val topic: String,
     val prompt: String,
     val anchor: String,
     val edition: String,
-    /** INTRO / ASK / REVIEW / REWRITE / DONE / ABANDONED */
+    /** 你这次站在哪条路径上讲：中观/唯识/如来藏/不限 */
+    val path: String,
+    /** INTRO / ASK / CLAIM / REVISIT / REWRITE / DONE */
     val stage: String,
+    /** 初讲原话，逐字保存 */
     val firstExplanation: String,
-    /** 对话序列化 JSON 数组 */
+    /** 问答序列 JSON：[{q, a, options}] */
     val dialogueJson: String,
-    val evaluationJson: String,
+    /** 重讲原话 */
     val revisedExplanation: String,
-    val finalFeedback: String,
+    /** 明辨的定性反馈（不再打分）*/
+    val feedback: String,
     val startedAt: Long,
-    val finishedAt: Long,        // 0 = 未完成
+    val finishedAt: Long,
     val updatedAt: Long
 )
 
 /**
- * 疑点：从评估中沉淀、可被消除。带 SRS 调度字段，S1 才会真正用上，
- * 但表结构现在就定，避免以后迁移。
+ * 理解卡 —— 学习体系的核心资产。
+ *
+ * 与旧的"疑点"根本区别：卡点由**你自己认领**，不是你被 AI 判定有问题。
+ * 记录的是你自己的困境与突破，复习时亮出来的是你自己的原话。
  */
 @Entity(
-    tableName = "doubt",
-    indices = [Index("questionId"), Index("nextReviewAt")]
+    tableName = "insight",
+    indices = [Index("sessionId"), Index("nextReviewAt"), Index("status")]
 )
-data class DoubtEntity(
+data class InsightEntity(
     @PrimaryKey val id: String,
-    val text: String,
+    val sessionId: String,
     val questionId: String,
     val topic: String,
+    /** 选定的路径：中观/唯识/如来藏/不限 */
+    val path: String,
+    /** 你怎么卡的 —— 你自己的话 */
+    val stuckAt: String,
+    /** 触发这个卡点的 AI 追问原话（可空）*/
+    val triggerQuestion: String,
+    /** 当时你怎么讲的 —— 原话快照，用于日后对照 */
+    val contextSnapshot: String,
+    /** 重讲之后，这个卡点解决了没有 */
+    val resolution: String,
+    /** 状态：OPEN=待重讲  RESOLVED=已想通  PARKED=搁置 */
+    val status: String,
+    /** 语言到不了的地方（诚实记录天花板，可空）*/
+    val unspeakable: String,
     val createdAt: Long,
-    val resolved: Boolean,
     val resolvedAt: Long,
-    /** SRS：下次到期时间戳，0 = 未排程 */
+    /** SRS */
     val nextReviewAt: Long = 0,
-    /** SRS：当前间隔天数 */
     val intervalDays: Int = 0,
-    /** SRS：难度系数（FSRS 简化） */
     val ease: Float = 2.5f,
-    /** SRS：连续答对次数 */
     val streak: Int = 0
 )
 
-/**
- * 复习日志：每次 SRS 复习结果，用于调参与历史回溯。
- */
-@Entity(tableName = "review_log", indices = [Index("doubtId"), Index("reviewedAt")])
+/** 复习日志：每次重讲结果，用于调参加历史回溯 */
+@Entity(tableName = "review_log", indices = [Index("insightId"), Index("reviewedAt")])
 data class ReviewLogEntity(
     @PrimaryKey val id: String,
-    val doubtId: String,
-    /** 1=忘记 2=吃力 3=想起 4=轻松 */
+    val insightId: String,
+    /** 1=还是卡 2=说清了一些 3=讲通了 4=很熟练 */
     val grade: Int,
     val reviewedAt: Long,
     val prevIntervalDays: Int,
-    val newIntervalDays: Int
+    val newIntervalDays: Int,
+    /** 这次复习时你的重讲原话 */
+    val retell: String
 )
 
-/**
- * 元数据表：题库存量版本、上次导入时间等。
- */
 @Entity(tableName = "meta")
 data class MetaEntity(
     @PrimaryKey val key: String,

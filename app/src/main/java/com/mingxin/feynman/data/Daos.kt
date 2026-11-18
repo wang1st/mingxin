@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -23,56 +22,55 @@ interface QuestionDao {
 }
 
 @Dao
-interface AttemptDao {
-    /** 全部尝试，按开始时间倒序；学习资产，永不截断 */
-    @Query("SELECT * FROM attempt ORDER BY startedAt DESC")
-    fun observeAll(): Flow<List<AttemptEntity>>
+interface SessionDao {
+    @Query("SELECT * FROM session ORDER BY startedAt DESC")
+    fun observeAll(): Flow<List<SessionEntity>>
 
-    @Query("SELECT * FROM attempt ORDER BY startedAt DESC")
-    suspend fun all(): List<AttemptEntity>
+    @Query("SELECT * FROM session ORDER BY startedAt DESC")
+    suspend fun all(): List<SessionEntity>
 
-    @Query("SELECT * FROM attempt WHERE id = :id")
-    suspend fun byId(id: String): AttemptEntity?
+    @Query("SELECT * FROM session WHERE id = :id")
+    suspend fun byId(id: String): SessionEntity?
 
-    /** 当前未完成的尝试（stage 不在 DONE/ABANDONED），用于 App 重启后恢复 */
-    @Query("SELECT * FROM attempt WHERE finishedAt = 0 ORDER BY updatedAt DESC LIMIT 1")
-    suspend fun active(): AttemptEntity?
+    /** 当前未完成的课 */
+    @Query("SELECT * FROM session WHERE finishedAt = 0 ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun active(): SessionEntity?
 
-    @Query("SELECT questionId FROM attempt WHERE finishedAt > 0 AND questionId != ''")
+    @Query("SELECT questionId FROM session WHERE finishedAt > 0 AND questionId != ''")
     suspend fun practicedQuestionIds(): List<String>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(a: AttemptEntity)
+    suspend fun upsert(s: SessionEntity)
 
-    @Query("DELETE FROM attempt WHERE id = :id")
+    @Query("DELETE FROM session WHERE id = :id")
     suspend fun delete(id: String)
 }
 
 @Dao
-interface DoubtDao {
-    @Query("SELECT * FROM doubt ORDER BY resolved ASC, createdAt DESC")
-    fun observeAll(): Flow<List<DoubtEntity>>
+interface InsightDao {
+    @Query("SELECT * FROM insight ORDER BY status ASC, createdAt DESC")
+    fun observeAll(): Flow<List<InsightEntity>>
 
-    @Query("SELECT * FROM doubt ORDER BY resolved ASC, createdAt DESC")
-    suspend fun all(): List<DoubtEntity>
+    @Query("SELECT * FROM insight ORDER BY status ASC, createdAt DESC")
+    suspend fun all(): List<InsightEntity>
 
-    @Query("SELECT * FROM doubt WHERE id = :id")
-    suspend fun byId(id: String): DoubtEntity?
+    @Query("SELECT * FROM insight WHERE id = :id")
+    suspend fun byId(id: String): InsightEntity?
 
-    /** 今日到期（含逾期）的未决疑点 */
-    @Query("SELECT * FROM doubt WHERE resolved = 0 AND nextReviewAt > 0 AND nextReviewAt <= :now ORDER BY nextReviewAt ASC")
-    suspend fun due(now: Long): List<DoubtEntity>
+    /** 到期（含逾期）的、仍待解决的 */
+    @Query("SELECT * FROM insight WHERE status = 'OPEN' AND nextReviewAt > 0 AND nextReviewAt <= :now ORDER BY nextReviewAt ASC")
+    suspend fun due(now: Long): List<InsightEntity>
 
-    @Query("SELECT COUNT(*) FROM doubt WHERE resolved = 0")
-    fun observeOpenCount(): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM doubt WHERE resolved = 0 AND nextReviewAt > 0 AND nextReviewAt <= :now")
+    @Query("SELECT COUNT(*) FROM insight WHERE status = 'OPEN' AND nextReviewAt > 0 AND nextReviewAt <= :now")
     suspend fun dueCount(now: Long): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(d: DoubtEntity)
+    @Query("SELECT COUNT(*) FROM insight WHERE status = 'RESOLVED'")
+    fun observeResolvedCount(): Flow<Int>
 
-    @Query("DELETE FROM doubt WHERE id = :id")
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(i: InsightEntity)
+
+    @Query("DELETE FROM insight WHERE id = :id")
     suspend fun delete(id: String)
 }
 

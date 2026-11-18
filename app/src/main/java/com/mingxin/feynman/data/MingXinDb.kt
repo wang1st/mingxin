@@ -8,18 +8,18 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         QuestionEntity::class,
-        AttemptEntity::class,
-        DoubtEntity::class,
+        SessionEntity::class,
+        InsightEntity::class,
         ReviewLogEntity::class,
         MetaEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MingXinDb : RoomDatabase() {
     abstract fun questionDao(): QuestionDao
-    abstract fun attemptDao(): AttemptDao
-    abstract fun doubtDao(): DoubtDao
+    abstract fun sessionDao(): SessionDao
+    abstract fun insightDao(): InsightDao
     abstract fun reviewLogDao(): ReviewLogDao
     abstract fun metaDao(): MetaDao
 
@@ -32,7 +32,7 @@ abstract class MingXinDb : RoomDatabase() {
                 context.applicationContext,
                 MingXinDb::class.java,
                 "mingxin.db"
-            ).build().also { instance = it }
+            ).fallbackToDestructiveMigration(dropAllTables = true).build().also { instance = it }
         }
     }
 }

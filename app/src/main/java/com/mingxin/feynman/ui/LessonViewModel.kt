@@ -6,12 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.mingxin.feynman.DeepSeekClient
 import com.mingxin.feynman.SecretStore
 import com.mingxin.feynman.Tutors
-import com.mingxin.feynman.data.AttemptEntity
-import com.mingxin.feynman.data.DoubtEntity
+import com.mingxin.feynman.data.InsightEntity
 import com.mingxin.feynman.data.QuestionEntity
 import com.mingxin.feynman.data.Repository
-import com.mingxin.feynman.data.ReviewLogEntity
-import com.mingxin.feynman.data.Scheduler
+import com.mingxin.feynman.data.SessionEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,27 +20,34 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+/** 一轮问答 */
 data class QaItem(val question: String, val answer: String, val options: List<String> = emptyList())
 
-data class LessonUi(
-    val attemptId: String = "",
+/**
+ * 一节课的 UI 状态。
+ *
+ * 阶段流转：INTRO（初讲）→ ASK（被追问）→ CLAIM（认领卡点）→ REVISIT（查看/重讲）→ DONE
+ */
+data class SessionUi(
+    val sessionId: String = "",
     val topic: String = "",
     val prompt: String = "",
     val anchor: String = "",
     val edition: String = "",
     val questionId: String = "",
+    /** 本次站在哪条路径上讲 */
+    val path: String = "不限",
     val stage: String = "INTRO",
     val firstExplanation: String = "",
     val dialogue: List<QaItem> = emptyList(),
     val currentQuestion: String = "",
     val currentOptions: List<String> = emptyList(),
-    val evaluationJson: String = "",
     val revisedExplanation: String = "",
-    val finalFeedback: String = "",
+    val feedback: String = "",
     val startedAt: Long = 0,
     val updatedAt: Long = 0
 ) {
-    val isActive: Boolean get() = attemptId.isNotBlank() && stage != "DONE"
+    val isActive: Boolean get() = sessionId.isNotBlank() && stage != "DONE"
 }
 
 class LessonViewModel(app: Application) : AndroidViewModel(app) {
@@ -51,8 +56,8 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
     private val secrets = SecretStore(app)
     private val client = DeepSeekClient()
 
-    private val _lesson = MutableStateFlow(LessonUi())
-    val lesson: StateFlow<LessonUi> = _lesson.asStateFlow()
+    private val _session = MutableStateFlow(SessionUi())
+    val session: StateFlow<SessionUi> = _session.asStateFlow()
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
@@ -69,24 +74,27 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
     private val _questions = MutableStateFlow<List<QuestionEntity>>(emptyList())
     val questions: StateFlow<List<QuestionEntity>> = _questions.asStateFlow()
 
-    /** 今日该复习的疑点数，首页展示 */
     private val _dueCount = MutableStateFlow(0)
     val dueCount: StateFlow<Int> = _dueCount.asStateFlow()
 
-    val attempts: StateFlow<List<AttemptEntity>> =
-        repo.attempts.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** 本节已认领的理解卡 */
+    private val _sessionInsights = MutableStateFlow<List<InsightEntity>>(emptyList())
+    val sessionInsights: StateFlow<List<InsightEntity>> = _sessionInsights.asStateFlow()
 
-    val doubts: StateFlow<List<DoubtEntity>> =
-        repo.doubts.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val sessions: StateFlow<List<SessionEntity>> =
+        repo.sessions.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val insights: StateFlow<List<InsightEntity>> =
+        repo.insights.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         viewModelScope.launch {
             repo.initialize()
+            repo.scheduleUnscheduled()
             _questions.value = repo.allQuestions()
             _hasKey.value = secrets.hasKey()
-            // 恢复未完成的尝试
-            repo.activeAttempt()?.let { _lesson.value = it.toUi() }
-            _dueCount.value = repo.dueCount()
+            repo.activeSession()?.let { _session.value = it.toUi() }
+            refreshDue()
             _ready.value = true
         }
     }
@@ -94,312 +102,300 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------- 密钥 ----------------
 
     fun saveKey(key: String) {
-        val trimmed = key.trim()
-        if (trimmed.isBlank()) {
-            _error.value = "请填写 API Key"
-            return
-        }
-        runCatching { secrets.save(trimmed) }
+        val t = key.trim()
+        if (t.isBlank()) { _error.value = "请填写 API Key"; return }
+        runCatching { secrets.save(t) }
             .onSuccess { _hasKey.value = true; _error.value = "" }
             .onFailure { _error.value = "保存失败：${it.localizedMessage}" }
     }
 
-    fun deleteKey() {
-        secrets.delete()
-        _hasKey.value = false
-    }
-
+    fun deleteKey() { secrets.delete(); _hasKey.value = false }
     fun clearError() { _error.value = "" }
+    fun repositoryForExport(): Repository = repo
 
-    // ---------------- 开始研习 ----------------
+    // ---------------- 开课 ----------------
 
-    /** 从题库题开始 */
-    fun startQuestion(q: QuestionEntity) = startNew(
+    fun startQuestion(q: QuestionEntity, path: String) = startNew(
         questionId = q.id, topic = "${q.sutra} · ${q.topic}", prompt = q.question,
-        anchor = q.anchor, edition = q.edition
+        anchor = q.anchor, edition = q.edition, path = path
     )
 
-    /** 自定义课题 */
-    fun startCustom(topic: String) = startNew(
-        questionId = "", topic = topic.trim(), prompt = "", anchor = "", edition = ""
+    fun startCustom(topic: String, path: String) = startNew(
+        questionId = "", topic = topic.trim(), prompt = "", anchor = "", edition = "", path = path
     )
 
-    /** 恢复历史尝试（笔记页点开） */
-    fun openAttempt(a: AttemptEntity) {
-        _lesson.value = a.toUi()
+    fun openSession(s: SessionEntity) {
+        _session.value = s.toUi()
     }
 
-    private fun startNew(questionId: String, topic: String, prompt: String, anchor: String, edition: String) {
+    private fun startNew(questionId: String, topic: String, prompt: String, anchor: String, edition: String, path: String) {
         val now = System.currentTimeMillis()
-        val id = UUID.randomUUID().toString()
-        _lesson.value = LessonUi(
-            attemptId = id, topic = topic, prompt = prompt, anchor = anchor,
-            edition = edition, questionId = questionId, stage = "INTRO",
-            startedAt = now, updatedAt = now
+        _session.value = SessionUi(
+            sessionId = UUID.randomUUID().toString(), topic = topic, prompt = prompt,
+            anchor = anchor, edition = edition, questionId = questionId,
+            path = path, stage = "INTRO", startedAt = now, updatedAt = now
         )
         _error.value = ""
         persist()
     }
 
-    /** 放弃当前未完成尝试 */
     fun abandonCurrent() {
-        val l = _lesson.value
-        if (l.attemptId.isBlank()) return
+        val s = _session.value
+        if (s.sessionId.isBlank()) return
         viewModelScope.launch {
-            repo.deleteAttempt(l.attemptId)
-            _lesson.value = LessonUi()
+            repo.deleteSession(s.sessionId)
+            _session.value = SessionUi()
         }
     }
 
-    // ---------------- 对话主流程 ----------------
+    // ---------------- 主流程 ----------------
 
-    fun send(input: String) {
-        val l = _lesson.value
-        if (l.attemptId.isBlank() || _busy.value || input.isBlank()) return
-        val key = secrets.read()
-        if (key.isNullOrBlank()) { _error.value = "请先在设置中配置 API Key"; return }
-
+    /** ① 初讲提交 → 请善问追问 */
+    fun submitFirstExplanation(text: String) {
+        val s = _session.value
+        if (s.sessionId.isBlank() || _busy.value || text.isBlank()) return
+        val key = secrets.read() ?: run { _error.value = "请先在设置中配置 API Key"; return }
         _error.value = ""
         _busy.value = true
         viewModelScope.launch {
             try {
-                when (l.stage) {
-                    "INTRO" -> {
-                        // 首次讲解 → 保存 → 请 AI 学生追问
-                        val next = l.copy(firstExplanation = input, updatedAt = System.currentTimeMillis())
-                        _lesson.value = next
-                        persist()
-                        askStudent(next, key, weakPoint = "")
-                    }
-                    "ASK" -> {
-                        // 回答学生问题 → 进评估
-                        val qa = QaItem(l.currentQuestion, input, l.currentOptions)
-                        val next = l.copy(
-                            dialogue = l.dialogue + qa,
-                            currentQuestion = "", currentOptions = emptyList(),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        _lesson.value = next
-                        persist()
-                        evaluate(next, key)
-                    }
-                    "REWRITE" -> {
-                        // 第二次讲解 → 总结反馈
-                        val next = l.copy(revisedExplanation = input, updatedAt = System.currentTimeMillis())
-                        _lesson.value = next
-                        persist()
-                        finalizeReview(next, key)
-                    }
-                    else -> Unit
+                val next = s.copy(firstExplanation = text.trim(), updatedAt = System.currentTimeMillis())
+                _session.value = next
+                persist()
+                askStudent(next, key)
+            } catch (t: Exception) {
+                _error.value = t.localizedMessage ?: "请求失败，请重试"
+            } finally { _busy.value = false }
+        }
+    }
+
+    /** ② 回答追问 → 继续被追问，或进入"认领卡点" */
+    fun answerQuestion(text: String) {
+        val s = _session.value
+        if (s.sessionId.isBlank() || _busy.value || text.isBlank()) return
+        val key = secrets.read() ?: run { _error.value = "请先在设置中配置 API Key"; return }
+        _error.value = ""
+        _busy.value = true
+        viewModelScope.launch {
+            try {
+                val qa = QaItem(s.currentQuestion, text.trim(), s.currentOptions)
+                val next = s.copy(
+                    dialogue = s.dialogue + qa,
+                    currentQuestion = "", currentOptions = emptyList(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                _session.value = next
+                persist()
+                // 已经问过 2 轮就主动把主动权交给用户去认领卡点
+                if (next.dialogue.size >= 3) {
+                    goToClaim()
+                } else {
+                    askStudent(next, key)
                 }
             } catch (t: Exception) {
                 _error.value = t.localizedMessage ?: "请求失败，请重试"
-            } finally {
-                _busy.value = false
-            }
+            } finally { _busy.value = false }
         }
     }
 
-    /** 评估薄弱处 → 打回学生再追问一轮 */
-    fun loopBack(weakPoint: String) {
-        val key = secrets.read() ?: run { _error.value = "请先配置 API Key"; return }
+    /** 随时可以提前进入认领阶段（用户觉得够了） */
+    fun goToClaim() {
+        val next = _session.value.copy(stage = "CLAIM", currentQuestion = "", currentOptions = emptyList(),
+            updatedAt = System.currentTimeMillis())
+        _session.value = next
+        persist()
+        loadSessionInsights(next.sessionId)
+    }
+
+    /**
+     * ③ 认领卡点。这是整个体系的核心：由用户选定"哪里卡住了"。
+     * 可以一次认领多个，也可以一个都不认领（说明真的讲清了）。
+     */
+    fun claimInsight(stuckAt: String, triggerQuestion: String) {
+        val s = _session.value
+        if (s.sessionId.isBlank() || stuckAt.isBlank()) return
+        viewModelScope.launch {
+            val snapshot = s.firstExplanation
+            repo.claimInsight(
+                sessionId = s.sessionId,
+                questionId = s.questionId,
+                topic = s.topic,
+                path = s.path,
+                stuckAt = stuckAt,
+                triggerQuestion = triggerQuestion,
+                contextSnapshot = snapshot
+            )
+            loadSessionInsights(s.sessionId)
+            refreshDue()
+        }
+    }
+
+    /** 认领完毕 → 进入重讲 */
+    fun finishClaiming() {
+        val next = _session.value.copy(stage = "REVISIT", updatedAt = System.currentTimeMillis())
+        _session.value = next
+        persist()
+    }
+
+    /** ④ 重讲：针对自己认领的卡点重新讲一遍 */
+    fun submitRevision(text: String) {
+        val s = _session.value
+        if (s.sessionId.isBlank() || _busy.value || text.isBlank()) return
+        val key = secrets.read() ?: run { _error.value = "请先在设置中配置 API Key"; return }
         _error.value = ""
         _busy.value = true
         viewModelScope.launch {
             try {
-                val next = _lesson.value.copy(stage = "ASK", updatedAt = System.currentTimeMillis())
-                _lesson.value = next
-                askStudent(next, key, weakPoint)
+                val next = s.copy(revisedExplanation = text.trim(), updatedAt = System.currentTimeMillis())
+                _session.value = next
+                persist()
+
+                // 明辨：定性判断卡点是否真解决（不打分）
+                val raw = client.chat(
+                    key = key, system = Tutors.discriminator,
+                    input = buildString {
+                        appendLine("本次路径：${next.path}")
+                        appendLine("研习问题：${next.prompt.ifBlank { next.topic }}")
+                        appendLine("用户初讲：${next.firstExplanation}")
+                        val claims = _sessionInsights.value
+                        if (claims.isNotEmpty()) {
+                            appendLine("用户认领的卡点：")
+                            claims.forEachIndexed { i, c ->
+                                appendLine("  ${i + 1}. ${c.stuckAt}")
+                            }
+                        }
+                        appendLine("用户重讲：${next.revisedExplanation}")
+                    },
+                    json = false, maxTokens = 1200
+                )
+                val done = next.copy(stage = "DONE", feedback = raw, updatedAt = System.currentTimeMillis())
+                _session.value = done
+                persist(finished = true)
+                loadSessionInsights(done.sessionId)
+                refreshDue()
             } catch (t: Exception) {
                 _error.value = t.localizedMessage ?: "请求失败，请重试"
-            } finally {
-                _busy.value = false
-            }
+            } finally { _busy.value = false }
         }
     }
 
-    private suspend fun askStudent(l: LessonUi, key: String, weakPoint: String) {
-        val ref = bankRef(l.questionId)
-        val instruction = if (weakPoint.isBlank())
-            "请以学生身份，针对用户的讲解提出一个追问（选择题形式）。"
-        else
-            "助教指出用户讲解中最薄弱的一处：$weakPoint\n请只针对这一处，以学生身份提出一个追问（选择题形式）。"
-
+    private suspend fun askStudent(s: SessionUi, key: String) {
+        val ref = bankRef(s.questionId)
         val raw = client.chat(
             key = key, system = Tutors.studentChoice,
-            input = transcript(l) + "\n" + ref + "\n" + instruction,
+            input = buildString {
+                appendLine("本次路径：${s.path}")
+                appendLine("主题：${s.topic}")
+                if (s.prompt.isNotBlank()) appendLine("研习问题：${s.prompt}")
+                appendLine("用户初讲：${s.firstExplanation}")
+                s.dialogue.forEachIndexed { i, qa ->
+                    appendLine("第${i + 1}问：${qa.question}")
+                    if (qa.options.isNotEmpty()) appendLine("候选：${qa.options.joinToString(" / ")}")
+                    appendLine("用户答：${qa.answer}")
+                }
+                appendLine(ref)
+                appendLine("请以学生身份提出一个追问（选择题形式）。")
+            },
             json = true, maxTokens = 480
         )
         val j = JSONObject(raw)
         if (j.optBoolean("done", false)) {
-            // 学生听懂了 → 直接进评估
-            evaluate(l, key)
+            goToClaim()
             return
         }
         val q = j.optString("question").trim()
         require(q.isNotBlank()) { "AI 没有返回有效问题，请重试。" }
         val arr = j.optJSONArray("options")
         val opts = if (arr == null) emptyList() else (0 until arr.length()).map { arr.optString(it).trim() }
-        val next = l.copy(
+        val next = s.copy(
             stage = "ASK", currentQuestion = q, currentOptions = opts,
             updatedAt = System.currentTimeMillis()
         )
-        _lesson.value = next
+        _session.value = next
         persist()
     }
 
-    private suspend fun evaluate(l: LessonUi, key: String) {
-        val raw = client.chat(
-            key = key, system = Tutors.evaluator,
-            input = transcript(l) + "\n" + bankRef(l.questionId) + "\n现在请按指定 json 结构评价本次讲解。",
-            json = true, maxTokens = 1600
-        )
-        JSONObject(raw) // 校验 JSON 有效
-        val next = l.copy(
-            stage = "REVIEW", currentQuestion = "", currentOptions = emptyList(),
-            evaluationJson = raw, updatedAt = System.currentTimeMillis()
-        )
-        _lesson.value = next
-        persist()
-        // 沉淀疑点
-        runCatching { JSONObject(raw).optString("issues").trim() }.getOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { repo.addDoubtIfNew(it, l.questionId, l.topic) }
-        refreshDue()
-    }
+    // ---------------- 理解卡 ----------------
 
-    private suspend fun finalizeReview(l: LessonUi, key: String) {
-        val raw = client.chat(
-            key = key, system = Tutors.review,
-            input = transcript(l) + "\n用户第二次讲解：${l.revisedExplanation}",
-            json = false, maxTokens = 900
-        )
-        val now = System.currentTimeMillis()
-        val next = l.copy(
-            stage = "DONE", finalFeedback = raw,
-            updatedAt = now
-        )
-        _lesson.value = next
-        persist(finished = true)
-    }
-
-    /** 进入第二次讲解阶段 */
-    fun startRewrite() {
-        val l = _lesson.value
-        if (l.stage != "REVIEW") return
-        val next = l.copy(stage = "REWRITE", updatedAt = System.currentTimeMillis())
-        _lesson.value = next
-        persist()
-    }
-
-    // ---------------- 疑点 ----------------
-
-    fun toggleDoubt(d: DoubtEntity) {
+    fun loadSessionInsights(sessionId: String) {
         viewModelScope.launch {
-            repo.toggleDoubt(d)
+            _sessionInsights.value = repo.allInsights().filter { it.sessionId == sessionId }
+        }
+    }
+
+    fun reviewInsight(insight: InsightEntity, grade: Int, retell: String) {
+        viewModelScope.launch {
+            repo.reviewInsight(insight, grade, retell)
             refreshDue()
         }
     }
 
-    /** 疑点复习打分：1=忘记 2=吃力 3=想起 4=轻松 */
-    fun reviewDoubt(d: DoubtEntity, grade: Int) {
-        viewModelScope.launch {
-            val r = Scheduler.schedule(d, grade)
-            repo.doubts.upsert(
-                d.copy(
-                    intervalDays = r.intervalDays, ease = r.ease, streak = r.streak,
-                    nextReviewAt = r.dueAt, resolved = false
-                )
-            )
-            repo.logReview(
-                ReviewLogEntity(
-                    id = UUID.randomUUID().toString(), doubtId = d.id, grade = grade,
-                    reviewedAt = System.currentTimeMillis(),
-                    prevIntervalDays = d.intervalDays, newIntervalDays = r.intervalDays
-                )
-            )
-            refreshDue()
-        }
+    fun parkInsight(insight: InsightEntity) {
+        viewModelScope.launch { repo.parkInsight(insight); refreshDue() }
     }
 
-    /** 疑点卡片"去研习"：从疑点回到原题 */
-    fun openDoubtSource(q: QuestionEntity) = startQuestion(q)
+    fun reopenInsight(insight: InsightEntity) {
+        viewModelScope.launch { repo.reopenInsight(insight); refreshDue() }
+    }
+
+    fun deleteInsight(insight: InsightEntity) {
+        viewModelScope.launch { repo.deleteInsight(insight.id); refreshDue() }
+    }
 
     fun refreshDue() {
         viewModelScope.launch { _dueCount.value = repo.dueCount() }
     }
 
-    /** 导出用：Repository 是纯数据入口，不暴露可变状态 */
-    fun repositoryForExport(): Repository = repo
-
     // ---------------- 持久化 ----------------
 
     private fun persist(finished: Boolean = false) {
-        val l = _lesson.value
-        if (l.attemptId.isBlank()) return
+        val s = _session.value
+        if (s.sessionId.isBlank()) return
         viewModelScope.launch {
-            repo.saveAttempt(
-                AttemptEntity(
-                    id = l.attemptId, questionId = l.questionId, topic = l.topic,
-                    prompt = l.prompt, anchor = l.anchor, edition = l.edition,
-                    stage = l.stage, firstExplanation = l.firstExplanation,
-                    dialogueJson = dialogueToJson(l.dialogue),
-                    evaluationJson = l.evaluationJson,
-                    revisedExplanation = l.revisedExplanation,
-                    finalFeedback = l.finalFeedback,
-                    startedAt = l.startedAt,
-                    finishedAt = if (finished || l.stage == "DONE") System.currentTimeMillis() else 0,
-                    updatedAt = l.updatedAt
+            repo.saveSession(
+                SessionEntity(
+                    id = s.sessionId, questionId = s.questionId, topic = s.topic,
+                    prompt = s.prompt, anchor = s.anchor, edition = s.edition, path = s.path,
+                    stage = s.stage, firstExplanation = s.firstExplanation,
+                    dialogueJson = dialogueToJson(s.dialogue),
+                    revisedExplanation = s.revisedExplanation, feedback = s.feedback,
+                    startedAt = s.startedAt,
+                    finishedAt = if (finished || s.stage == "DONE") System.currentTimeMillis() else 0,
+                    updatedAt = s.updatedAt
                 )
             )
         }
     }
 
-    // ---------------- 工具 ----------------
-
     private fun bankRef(questionId: String): String {
         if (questionId.isBlank()) return ""
-        val q = _questions.value.firstOrNull { it.id == questionId } ?: return ""
-        return Tutors.bankRef(q)
-    }
-
-    private fun transcript(l: LessonUi): String = buildString {
-        appendLine("主题：${l.topic}")
-        if (l.prompt.isNotBlank()) appendLine("研习问题：${l.prompt}")
-        appendLine("用户首次讲解：${l.firstExplanation}")
-        l.dialogue.forEachIndexed { i, qa ->
-            appendLine("第${i + 1}问 AI学生：${qa.question}")
-            if (qa.options.isNotEmpty()) appendLine("候选回答：${qa.options.joinToString(" / ")}")
-            appendLine("用户回答：${qa.answer}")
-        }
+        return Tutors.bankRef(_questions.value.firstOrNull { it.id == questionId })
     }
 
     private fun dialogueToJson(items: List<QaItem>): String {
         val arr = JSONArray()
         items.forEach { qa ->
-            arr.put(
-                JSONObject().put("q", qa.question).put("a", qa.answer)
-                    .put("opts", JSONArray().apply { qa.options.forEach { put(it) } })
-            )
+            arr.put(JSONObject().put("q", qa.question).put("a", qa.answer)
+                .put("opts", JSONArray().apply { qa.options.forEach { put(it) } }))
         }
         return arr.toString()
     }
 
-    private fun AttemptEntity.toUi(): LessonUi {
+    private fun SessionEntity.toUi(): SessionUi {
         val items = runCatching { JSONArray(dialogueJson) }.getOrDefault(JSONArray())
         val dialogue = (0 until items.length()).map { i ->
             val j = items.optJSONObject(i) ?: JSONObject()
             val opts = j.optJSONArray("opts")
             QaItem(
-                question = j.optString("q"), answer = j.optString("a"),
-                options = if (opts == null) emptyList() else (0 until opts.length()).map { opts.optString(it) }
+                j.optString("q"), j.optString("a"),
+                if (opts == null) emptyList() else (0 until opts.length()).map { opts.optString(it) }
             )
         }
-        return LessonUi(
-            attemptId = id, topic = topic, prompt = prompt, anchor = anchor, edition = edition,
-            questionId = questionId, stage = stage, firstExplanation = firstExplanation,
-            dialogue = dialogue, evaluationJson = evaluationJson,
-            revisedExplanation = revisedExplanation, finalFeedback = finalFeedback,
+        return SessionUi(
+            sessionId = id, topic = topic, prompt = prompt, anchor = anchor, edition = edition,
+            questionId = questionId, path = path, stage = stage,
+            firstExplanation = firstExplanation, dialogue = dialogue,
+            revisedExplanation = revisedExplanation, feedback = feedback,
             startedAt = startedAt, updatedAt = updatedAt
         )
     }
