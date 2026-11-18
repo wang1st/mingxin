@@ -141,6 +141,8 @@ class MainActivity : ComponentActivity() {
             )) {
                 val navController = androidx.navigation.compose.rememberNavController()
                 openLessonFn = { pushLesson(navController) }
+                val backStackEntry by navController.currentBackStackEntryAsState()
+                val page = backStackEntry?.destination?.route ?: "home"
                 MainUI(
                     page = page, navController = navController, lesson = current, history = history, busy = busy,
                     error = error, hasKey = hasApiKey, speaking = speaking,
@@ -442,6 +444,23 @@ class MainActivity : ComponentActivity() {
 /* ------------------------------------------------------------------ */
 
 @Composable
+private fun NavEntry(
+    key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+    page: String, modifier: Modifier = Modifier, onClick: () -> Unit
+) {
+    val selected = page == key
+    Column(
+        modifier.clickable(onClick = onClick).padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = if (selected) Jade else Ink70, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 11.sp, color = if (selected) Jade else Ink70, maxLines = 1)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun MainUI(
     page: String,
     navController: androidx.navigation.NavHostController,
@@ -450,7 +469,6 @@ private fun MainUI(
     busy: Boolean,
     error: String,
     hasKey: Boolean,
-    onNavigate: (String) -> Unit,
     onOpenLesson: () -> Unit,
     speaking: String,
     onStartQuestion: (BankQuestion) -> Unit,
@@ -520,11 +538,11 @@ private fun MainUI(
                         Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        NavEntry("home", "研习", Icons.Default.Home, page, Modifier.weight(1f)) { onNavigate("home") }
-                        NavEntry("doubts", "疑点", Icons.Default.Lightbulb, page, Modifier.weight(1f)) { onNavigate("doubts") }
+                        NavEntry("home", "研习", Icons.Default.Home, page, Modifier.weight(1f)) { navController.navigate("home") { popUpTo("home") { inclusive = true } } }
+                        NavEntry("doubts", "疑点", Icons.Default.Lightbulb, page, Modifier.weight(1f)) { navController.navigate("doubts") { popUpTo("home") } }
                         Spacer(Modifier.width(64.dp))
-                        NavEntry("history", "笔记", Icons.Default.MenuBook, page, Modifier.weight(1f)) { onNavigate("history") }
-                        NavEntry("settings", "设置", Icons.Default.Settings, page, Modifier.weight(1f)) { onNavigate("settings") }
+                        NavEntry("history", "笔记", Icons.Default.MenuBook, page, Modifier.weight(1f)) { navController.navigate("history") { popUpTo("home") } }
+                        NavEntry("settings", "设置", Icons.Default.Settings, page, Modifier.weight(1f)) { navController.navigate("settings") { popUpTo("home") } }
                     }
                 }
                 FloatingActionButton(
@@ -565,20 +583,20 @@ private fun MainUI(
             ) { when (page) {
                 "home" -> HomeScreen(
                     active = lesson, hasKey = hasKey, history = history, doubts = doubts,
-                    onResume = onResume, onSettings = { onNavigate("settings") },
-                    onBrowse = { onNavigate("browse") },
+                    onResume = onResume, onSettings = { navController.navigate("settings") { popUpTo("home") } },
+                    onBrowse = { navController.navigate("browse") },
                     onStart = onStartQuestion,
-                    onDoubts = { onNavigate("doubts") },
+                    onDoubts = { navController.navigate("doubts") { popUpTo("home") } },
                     onCustom = { showCustom = true }
                 )
                 "browse" -> BrowseScreen(
-                    onPickGroup = { g -> onSelectGroup(g); onNavigate("topic") },
+                    onPickGroup = { g -> onSelectGroup(g); navController.navigate("topic") },
                     onCustom = { showCustom = true }
                 )
                 "topic" -> if (selectedGroup != null) {
                     TopicScreen(selectedGroup!!, onStartQuestion)
                 } else {
-                    LaunchedEffect(Unit) { onNavigate("home") }
+                    LaunchedEffect(Unit) { navController.navigate("home") { popUpTo("home") { inclusive = true } } }
                     Spacer(Modifier.fillMaxSize())
                 }
                 "doubts" -> DoubtsScreen(doubts, onToggleDoubt) { q -> onStartQuestion(q) }
