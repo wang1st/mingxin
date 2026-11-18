@@ -810,11 +810,13 @@ private fun LessonScreen(
             if (session.firstExplanation.isNotBlank()) {
                 item { UserBubble(session.firstExplanation, "我的初讲") }
             }
-            itemsIndexed(session.dialogue) { i, qa ->
-                item {
+            session.dialogue.forEachIndexed { _, qa ->
+                item(key = "q-${qa.question.hashCode()}-${qa.answer.hashCode()}") {
                     StudentCard(qa.question, speaking == qa.question) { onSpeech(qa.question) }
                 }
-                item { UserBubble(qa.answer, "我的回答") }
+                item(key = "a-${qa.answer.hashCode()}-${qa.question.hashCode()}") {
+                    UserBubble(qa.answer, "我的回答")
+                }
             }
             if (session.currentQuestion.isNotBlank() && !busy) {
                 item {
@@ -1112,7 +1114,7 @@ private fun ChoicePanel(
         options.forEachIndexed { i, opt ->
             OptionRow(i, opt, selected == i, !busy) { onSelect(i) }
         }
-        OptionRow(-1, "以上都不是", selected == escape, !busy) { onSelect(options.size) }
+        OptionRow(-1, "以上都不是", escape, !busy) { onSelect(options.size) }
         if (escape) {
             OutlinedTextField(
                 value = input, onValueChange = onInputChange,
