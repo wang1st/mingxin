@@ -889,7 +889,7 @@ private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
         items(group.questions, key = { it.id }) { q ->
             Surface(
                 color = Color.White, shape = CardShape, shadowElevation = 3.dp,
-                modifier = Modifier.fillMaxWidth().clickable(enabled = !inFlight) { onStart(q) }
+                modifier = Modifier.fillMaxWidth().clickable { onStart(q) }
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
