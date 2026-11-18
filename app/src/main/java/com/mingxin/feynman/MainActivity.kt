@@ -57,6 +57,9 @@ import androidx.navigation.compose.composable
 import com.mingxin.feynman.data.Exporter
 import com.mingxin.feynman.data.InsightEntity
 import com.mingxin.feynman.data.QuestionEntity
+import com.mingxin.feynman.ui.DataStats
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.mingxin.feynman.data.SessionEntity
 import com.mingxin.feynman.data.TopicGroup
 import com.mingxin.feynman.data.byId
@@ -110,12 +113,15 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(
-                primary = Jade, onPrimary = Color.White, background = Paper,
-                surface = Color.White, onSurface = Ink, secondary = Gold,
-                error = Vermilion
-            )) {
-                val vm: LessonViewModel = viewModel()
+            val vm: LessonViewModel = viewModel()
+            val darkBySystem = androidx.compose.foundation.isSystemInDarkTheme()
+            val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+            val dark = when (themeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> darkBySystem
+            }
+            MingXinTheme(dark = dark) {
                 val session by vm.session.collectAsStateWithLifecycle()
                 val busy by vm.busy.collectAsStateWithLifecycle()
                 val error by vm.error.collectAsStateWithLifecycle()
@@ -126,6 +132,7 @@ class MainActivity : ComponentActivity() {
                 val sessions by vm.sessions.collectAsStateWithLifecycle()
                 val dueCount by vm.dueCount.collectAsStateWithLifecycle()
                 val sessionInsights by vm.sessionInsights.collectAsStateWithLifecycle()
+                val stats by vm.stats.collectAsStateWithLifecycle()
 
                 val navController = androidx.navigation.compose.rememberNavController()
                 val goTo: (String) -> Unit = remember(navController) {
@@ -166,6 +173,9 @@ class MainActivity : ComponentActivity() {
                         onSaveKey = vm::saveKey,
                         onDeleteKey = vm::deleteKey,
                         onSpeech = { phrase -> speak(phrase) },
+                        themeMode = themeMode,
+                        onThemeMode = vm::setThemeMode,
+                        stats = stats,
                         onExport = { kind ->
                             lifecycleScope.launch {
                                 val (name, content, mime) = when (kind) {
@@ -216,8 +226,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun LoadingScreen() {
+    val cc = MingTheme.colors
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = Jade)
+        CircularProgressIndicator(color = cc.jade)
     }
 }
 
@@ -227,14 +238,15 @@ private fun NavEntry(
     key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
     page: String, modifier: Modifier = Modifier, onClick: () -> Unit
 ) {
+    val cc = MingTheme.colors
     val selected = page == key
     Column(
         modifier.clickable(onClick = onClick).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(icon, contentDescription = label, tint = if (selected) Jade else Ink70, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = label, tint = if (selected) cc.jade else cc.ink70, modifier = Modifier.size(22.dp))
         Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = if (selected) Jade else Ink70, maxLines = 1)
+        Text(label, fontSize = 11.sp, color = if (selected) cc.jade else cc.ink70, maxLines = 1)
     }
 }
 
@@ -269,8 +281,12 @@ private fun MainUI(
     onSaveKey: (String) -> Unit,
     onDeleteKey: () -> Unit,
     onSpeech: (String) -> Unit,
-    onExport: (String) -> Unit
+    onExport: (String) -> Unit,
+    themeMode: String,
+    onThemeMode: (String) -> Unit,
+    stats: DataStats
 ) {
+    val cc = MingTheme.colors
     var keyDraft by remember { mutableStateOf("") }
     var selectedGroup by remember { mutableStateOf<TopicGroup?>(null) }
     var selectedPath by rememberSaveable { mutableStateOf("不限") }
@@ -289,7 +305,7 @@ private fun MainUI(
                         modifier = Modifier.fillMaxWidth(), maxLines = 2,
                         placeholder = { Text("例如：因果与自由意志") }
                     )
-                    Text("站在哪条路径上讲？", fontSize = 12.sp, color = Ink70)
+                    Text("站在哪条路径上讲？", fontSize = 12.sp, color = cc.ink70)
                     PathChips(selectedPath) { selectedPath = it }
                 }
             },
@@ -302,9 +318,9 @@ private fun MainUI(
                         }
                     },
                     enabled = customDraft.isNotBlank()
-                ) { Text("开始", color = Jade) }
+                ) { Text("开始", color = cc.jade) }
             },
-            dismissButton = { TextButton(onClick = { showCustom = false }) { Text("取消", color = Ink70) } }
+            dismissButton = { TextButton(onClick = { showCustom = false }) { Text("取消", color = cc.ink70) } }
         )
     }
 
@@ -317,14 +333,14 @@ private fun MainUI(
                 TextButton(onClick = {
                     pendingQuestion?.let { onStartQuestion(it, selectedPath) }
                     pendingQuestion = null
-                }) { Text("放弃并开始", color = Vermilion) }
+                }) { Text("放弃并开始", color = cc.vermilion) }
             },
-            dismissButton = { TextButton(onClick = { pendingQuestion = null }) { Text("取消", color = Ink70) } }
+            dismissButton = { TextButton(onClick = { pendingQuestion = null }) { Text("取消", color = cc.ink70) } }
         )
     }
 
     Scaffold(
-        containerColor = Paper,
+        containerColor = cc.paper,
         bottomBar = {
             if (page != "lesson" && page != "claim") {
                 Box {
@@ -339,7 +355,6 @@ private fun MainUI(
                             NavEntry("insights", "理解卡", Icons.Default.Lightbulb, page, Modifier.weight(1f)) {
                                 navController.navigate("insights") { popUpTo("home") }
                             }
-                            Spacer(Modifier.width(64.dp))
                             NavEntry("history", "笔记", Icons.Default.MenuBook, page, Modifier.weight(1f)) {
                                 navController.navigate("history") { popUpTo("home") }
                             }
@@ -354,8 +369,8 @@ private fun MainUI(
     ) { inset ->
         Column(Modifier.fillMaxSize().padding(inset)) {
             if (error.isNotBlank() && page != "lesson" && page != "claim") {
-                Surface(color = Vermilion12, modifier = Modifier.fillMaxWidth()) {
-                    Text(error, color = Vermilion, fontSize = 13.sp,
+                Surface(color = cc.vermilion12, modifier = Modifier.fillMaxWidth()) {
+                    Text(error, color = cc.vermilion, fontSize = 13.sp,
                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
                 }
             }
@@ -399,7 +414,12 @@ private fun MainUI(
                     HistoryScreen(sessions, { s -> onOpenSession(s) }, { onExport("markdown") })
                 }
                 composable("settings") {
-                    SettingsScreen(hasKey, keyDraft, { keyDraft = it }, { onSaveKey(keyDraft); keyDraft = "" }, onDeleteKey)
+                    SettingsScreen(
+                        hasKey = hasKey, draft = keyDraft, changeDraft = { keyDraft = it },
+                        save = { onSaveKey(keyDraft); keyDraft = "" }, delete = onDeleteKey,
+                        themeMode = themeMode, onThemeMode = onThemeMode,
+                        stats = stats, onExport = onExport
+                    )
                 }
                 composable("claim") {
                     ClaimScreen(
@@ -425,18 +445,19 @@ private fun MainUI(
 
 @Composable
 private fun PathChips(current: String, onChange: (String) -> Unit) {
+    val cc = MingTheme.colors
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         PATH_OPTIONS.forEach { p ->
             val sel = p == current
             Surface(
-                color = if (sel) Jade else Color.White,
+                color = if (sel) cc.jade else Color.White,
                 shape = RoundedCornerShape(14.dp),
-                border = if (sel) null else BorderStroke(1.dp, Ink12),
+                border = if (sel) null else BorderStroke(1.dp, cc.ink12),
                 modifier = Modifier.clickable { onChange(p) }
             ) {
                 Text(
                     p, fontSize = 12.sp, maxLines = 1,
-                    color = if (sel) Color.White else Ink70,
+                    color = if (sel) Color.White else cc.ink70,
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 )
@@ -467,6 +488,7 @@ private fun HomeScreen(
     onInsights: () -> Unit,
     onCustom: () -> Unit
 ) {
+    val cc = MingTheme.colors
     val practiced = remember(sessions.size) {
         sessions.filter { it.finishedAt > 0 }.map { it.questionId }.filter { it.isNotBlank() }.toSet()
     }
@@ -484,13 +506,13 @@ private fun HomeScreen(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(Jade10),
+                    Modifier.size(40.dp).clip(CircleShape).background(cc.jade10),
                     contentAlignment = Alignment.Center
-                ) { Text("明", color = JadeDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                ) { Text("明", color = cc.jadeDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("${greeting()}，欢迎回来", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
-                    Text("今日也来讲一课", fontSize = 13.sp, color = Ink70)
+                    Text("${greeting()}，欢迎回来", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.ink)
+                    Text("今日也来讲一课", fontSize = 13.sp, color = cc.ink70)
                 }
             }
         }
@@ -509,16 +531,16 @@ private fun HomeScreen(
                         Text(
                             if (dueCount > 0) "今天有 $dueCount 个卡点该重讲了" else "今天没有到期的卡点",
                             fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                            color = if (dueCount > 0) GoldText else Ink
+                            color = if (dueCount > 0) cc.goldText else cc.ink
                         )
                         Spacer(Modifier.height(3.dp))
                         Text(
                             "已想通 $resolvedCount · 悬而未决 $openCount",
-                            fontSize = 12.sp, color = Ink70
+                            fontSize = 12.sp, color = cc.ink70
                         )
                     }
                     if (dueCount > 0) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Gold, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = cc.gold, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -528,7 +550,7 @@ private fun HomeScreen(
         if (inFlight) {
             item {
                 Surface(
-                    color = Jade, shape = CardShape, shadowElevation = 4.dp,
+                    color = cc.jade, shape = CardShape, shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth().clickable { onResume() }
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -553,7 +575,7 @@ private fun HomeScreen(
         if (next != null && !inFlight) {
             item {
                 Surface(
-                    color = Jade, shape = CardShape, shadowElevation = 4.dp,
+                    color = cc.jade, shape = CardShape, shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -575,7 +597,7 @@ private fun HomeScreen(
                                 ) {
                                     Text(
                                         p, fontSize = 11.sp, maxLines = 1,
-                                        color = if (sel) JadeDeep else Color.White,
+                                        color = if (sel) cc.jadeDeep else Color.White,
                                         fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
                                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                                     )
@@ -586,7 +608,7 @@ private fun HomeScreen(
                             onClick = { onStart(next) },
                             modifier = Modifier.fillMaxWidth().height(46.dp),
                             shape = BtnShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = JadeDeep)
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = cc.jadeDeep)
                         ) { Text("开始研习", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
@@ -594,7 +616,7 @@ private fun HomeScreen(
         }
 
         item {
-            Text("按经论选", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("按经论选", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = cc.ink)
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -614,6 +636,7 @@ private fun QuickChip(
     label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
     modifier: Modifier = Modifier, onClick: () -> Unit
 ) {
+    val cc = MingTheme.colors
     Surface(
         color = Color.White, shape = CardShape, shadowElevation = 2.dp,
         modifier = modifier.clickable(onClick = onClick)
@@ -622,9 +645,9 @@ private fun QuickChip(
             Modifier.padding(vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(icon, null, tint = Jade, modifier = Modifier.size(22.dp))
+            Icon(icon, null, tint = cc.jade, modifier = Modifier.size(22.dp))
             Spacer(Modifier.height(6.dp))
-            Text(label, fontSize = 13.sp, color = Ink, maxLines = 1)
+            Text(label, fontSize = 13.sp, color = cc.ink, maxLines = 1)
         }
     }
 }
@@ -635,6 +658,7 @@ private fun BrowseScreen(
     onPickGroup: (TopicGroup) -> Unit,
     onCustom: () -> Unit
 ) {
+    val cc = MingTheme.colors
     var sutra by remember { mutableStateOf(questions.sutrasOf().firstOrNull().orEmpty()) }
     val topics = remember(sutra, questions.size) { questions.topicsOf(sutra) }
 
@@ -643,7 +667,7 @@ private fun BrowseScreen(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("自由选题", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+            Text("自由选题", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.ink, modifier = Modifier.weight(1f))
         }
         Row(
             Modifier.padding(horizontal = 20.dp),
@@ -652,13 +676,13 @@ private fun BrowseScreen(
             questions.sutrasOf().forEach { name ->
                 val sel = name == sutra
                 Surface(
-                    color = if (sel) Jade else Color.White,
+                    color = if (sel) cc.jade else Color.White,
                     shape = RoundedCornerShape(18.dp),
-                    border = if (sel) null else BorderStroke(1.dp, Ink12),
+                    border = if (sel) null else BorderStroke(1.dp, cc.ink12),
                     modifier = Modifier.clickable { sutra = name }
                 ) {
                     Text(name, fontSize = 13.sp, maxLines = 1,
-                        color = if (sel) Color.White else Ink70,
+                        color = if (sel) Color.White else cc.ink70,
                         fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
                 }
@@ -675,10 +699,10 @@ private fun BrowseScreen(
                     modifier = Modifier.fillMaxWidth().clickable { onPickGroup(group) }
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(group.topic, fontSize = 16.sp, color = Ink, modifier = Modifier.weight(1f))
-                        Text("${group.questions.size} 题", fontSize = 12.sp, color = Ink70)
+                        Text(group.topic, fontSize = 16.sp, color = cc.ink, modifier = Modifier.weight(1f))
+                        Text("${group.questions.size} 题", fontSize = 12.sp, color = cc.ink70)
                         Spacer(Modifier.width(6.dp))
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Ink70, modifier = Modifier.size(15.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = cc.ink70, modifier = Modifier.size(15.dp))
                     }
                 }
             }
@@ -688,14 +712,15 @@ private fun BrowseScreen(
 
 @Composable
 private fun TopicScreen(group: TopicGroup, onStart: (QuestionEntity) -> Unit) {
+    val cc = MingTheme.colors
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text(group.topic, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
-            Text(group.sutra, fontSize = 12.sp, color = Ink70)
+            Text(group.topic, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.ink)
+            Text(group.sutra, fontSize = 12.sp, color = cc.ink70)
             Spacer(Modifier.height(4.dp))
         }
         items(group.questions) { q ->
@@ -705,11 +730,11 @@ private fun TopicScreen(group: TopicGroup, onStart: (QuestionEntity) -> Unit) {
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(q.id, color = GoldText, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text(q.id, color = cc.goldText, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         Spacer(Modifier.weight(1f))
                         DifficultyDots(q.difficulty)
                     }
-                    Text(q.question, fontSize = 15.sp, lineHeight = 22.sp, color = Ink)
+                    Text(q.question, fontSize = 15.sp, lineHeight = 22.sp, color = cc.ink)
                 }
             }
         }
@@ -717,12 +742,13 @@ private fun TopicScreen(group: TopicGroup, onStart: (QuestionEntity) -> Unit) {
 }
 
 @Composable
-private fun DifficultyDots(level: Int, tint: Color = Jade) {
+private fun DifficultyDots(level: Int, tint: Color? = null) {
+    val cc = MingTheme.colors
     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         repeat(5) { i ->
             Box(
                 Modifier.size(5.dp).clip(CircleShape)
-                    .background(if (i <= level) tint else Ink12)
+                    .background(if (i <= level) (tint ?: cc.jade) else cc.ink12)
             )
         }
     }
@@ -735,6 +761,7 @@ private fun DifficultyDots(level: Int, tint: Color = Jade) {
 
 @Composable
 private fun StageBar(stage: String) {
+    val cc = MingTheme.colors
     val steps = listOf("初讲" to "INTRO", "被追问" to "ASK", "认领卡点" to "CLAIM", "重讲" to "REVISIT")
     val current = when (stage) {
         "INTRO" -> 0
@@ -750,7 +777,7 @@ private fun StageBar(stage: String) {
             Text(
                 label,
                 fontSize = 12.sp,
-                color = if (now) Ink else if (done) Jade else Ink70.copy(alpha = 0.45f),
+                color = if (now) cc.ink else if (done) cc.jade else cc.ink70.copy(alpha = 0.45f),
                 fontWeight = if (now) FontWeight.Bold else FontWeight.Normal,
                 maxLines = 1
             )
@@ -760,7 +787,7 @@ private fun StageBar(stage: String) {
                         .padding(horizontal = 7.dp)
                         .weight(1f)
                         .height(1.dp)
-                        .background(if (i < current) Jade else Ink12)
+                        .background(if (i < current) cc.jade else cc.ink12)
                 )
             }
         }
@@ -782,6 +809,7 @@ private fun LessonScreen(
     questions: List<QuestionEntity>,
     onSubmitSuccess: () -> Unit
 ) {
+    val cc = MingTheme.colors
     var input by rememberSaveable(session.stage, session.dialogue.size) { mutableStateOf("") }
     var selectedOption by rememberSaveable(session.dialogue.size) { mutableStateOf(-1) }
     val listState = rememberLazyListState()
@@ -801,15 +829,15 @@ private fun LessonScreen(
             Spacer(Modifier.height(10.dp))
             Text(
                 session.prompt.ifBlank { session.topic },
-                fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = Ink
+                fontSize = 17.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = cc.ink
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.height(2.dp))
-                Text(session.topic, fontSize = 11.sp, color = GoldText)
-                Text(" · 路径：${session.path}", fontSize = 11.sp, color = Ink70)
+                Text(session.topic, fontSize = 11.sp, color = cc.goldText)
+                Text(" · 路径：${session.path}", fontSize = 11.sp, color = cc.ink70)
             }
         }
-        HorizontalDivider(color = Ink12, thickness = 0.5.dp)
+        HorizontalDivider(color = cc.ink12, thickness = 0.5.dp)
 
         LazyColumn(
             Modifier.weight(1f),
@@ -840,19 +868,19 @@ private fun LessonScreen(
             if (session.stage == "CLAIM") {
                 item {
                     Surface(
-                        color = Gold12, shape = CardShape, modifier = Modifier.fillMaxWidth()
+                        color = cc.gold12, shape = CardShape, modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("现在轮到你了", fontWeight = FontWeight.Bold, color = GoldText, fontSize = 15.sp)
+                            Text("现在轮到你了", fontWeight = FontWeight.Bold, color = cc.goldText, fontSize = 15.sp)
                             Text(
                                 "善问问了这些，你不必都答得上。\n下一步是：自己指出——哪一句真的让你卡住了。",
-                                fontSize = 13.sp, lineHeight = 21.sp, color = Ink
+                                fontSize = 13.sp, lineHeight = 21.sp, color = cc.ink
                             )
                             Button(
                                 onClick = onGoClaim,
                                 modifier = Modifier.fillMaxWidth().height(44.dp),
                                 shape = BtnShape,
-                                colors = ButtonDefaults.buttonColors(containerColor = Gold)
+                                colors = ButtonDefaults.buttonColors(containerColor = cc.gold)
                             ) { Text("去认领卡点", fontSize = 14.sp) }
                         }
                     }
@@ -862,24 +890,24 @@ private fun LessonScreen(
             if (session.stage == "REVISIT" && sessionInsights.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("你认领的卡点", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GoldText)
+                        Text("你认领的卡点", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cc.goldText)
                         sessionInsights.forEach { c ->
                             Surface(
                                 color = Color.White, shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, Gold.copy(alpha = 0.4f)),
+                                border = BorderStroke(1.dp, cc.gold.copy(alpha = 0.4f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(c.stuckAt, fontSize = 14.sp, lineHeight = 21.sp, color = Ink)
+                                    Text(c.stuckAt, fontSize = 14.sp, lineHeight = 21.sp, color = cc.ink)
                                     if (c.triggerQuestion.isNotBlank()) {
-                                        Text("起因：${c.triggerQuestion}", fontSize = 11.sp, color = Ink70)
+                                        Text("起因：${c.triggerQuestion}", fontSize = 11.sp, color = cc.ink70)
                                     }
                                 }
                             }
                         }
                         Text(
                             "查过之后，针对这些问题重讲一遍。",
-                            fontSize = 12.sp, color = Ink70, lineHeight = 18.sp
+                            fontSize = 12.sp, color = cc.ink70, lineHeight = 18.sp
                         )
                     }
                 }
@@ -887,10 +915,10 @@ private fun LessonScreen(
 
             if (session.stage == "REVISIT" && sessionInsights.isEmpty()) {
                 item {
-                    Surface(color = Jade10, shape = CardShape, modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = cc.jade10, shape = CardShape, modifier = Modifier.fillMaxWidth()) {
                         Text(
                             "你没有认领任何卡点——说明这次讲得比较透。\n也可以再讲一遍，看看能讲出什么新东西。",
-                            fontSize = 13.sp, lineHeight = 21.sp, color = JadeDeep,
+                            fontSize = 13.sp, lineHeight = 21.sp, color = cc.jadeDeep,
                             modifier = Modifier.padding(14.dp)
                         )
                     }
@@ -907,8 +935,8 @@ private fun LessonScreen(
 
             if (error.isNotBlank()) {
                 item {
-                    Surface(color = Vermilion12, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        Text(error, color = Vermilion, fontSize = 13.sp, lineHeight = 20.sp,
+                    Surface(color = cc.vermilion12, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(error, color = cc.vermilion, fontSize = 13.sp, lineHeight = 20.sp,
                             modifier = Modifier.padding(12.dp))
                     }
                 }
@@ -918,7 +946,7 @@ private fun LessonScreen(
 
         // 底部输入区
         if (editable && session.stage != "CLAIM") {
-            Surface(color = AppSurface, shadowElevation = 8.dp) {
+            Surface(color = cc.surface, shadowElevation = 8.dp) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
                     if (choiceMode) {
                         ChoicePanel(
@@ -961,7 +989,7 @@ private fun LessonScreen(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "答不上来也没关系——点这里可以直接进入「认领卡点」",
-                            fontSize = 11.sp, color = Jade, fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp, color = cc.jade, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.fillMaxWidth().clickable { onGoClaim() }
                         )
                     }
@@ -972,25 +1000,27 @@ private fun LessonScreen(
 }
 
 @Composable
-private fun RoleAvatar(char: String, bg: Color, textColor: Color = Color.White) {
+private fun RoleAvatar(char: String, bg: Color, textColor: Color? = null) {
+    val cc = MingTheme.colors
     Box(
         Modifier.size(30.dp).clip(CircleShape).background(bg),
         contentAlignment = Alignment.Center
     ) {
-        Text(char, color = textColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text(char, color = textColor ?: cc.ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun StudentCard(text: String, active: Boolean = false, onSpeak: () -> Unit) {
+    val cc = MingTheme.colors
     Row {
-        RoleAvatar("善", Color.White, JadeDeep)
+        RoleAvatar("善", Color.White, cc.jadeDeep)
         Spacer(Modifier.width(8.dp))
         Column(
             Modifier
                 .weight(1f)
                 .clip(CardShape)
-                .background(Brush.linearGradient(JadeGrad))
+                .background(Brush.linearGradient(cc.jadeGrad))
                 .padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1012,25 +1042,27 @@ private fun StudentCard(text: String, active: Boolean = false, onSpeak: () -> Un
 
 @Composable
 private fun TutorCard(text: String) {
+    val cc = MingTheme.colors
     Column(
         Modifier
             .fillMaxWidth(0.94f)
             .clip(CardShape)
-            .background(Gold12)
+            .background(cc.gold12)
             .padding(14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.MenuBook, contentDescription = null, tint = Gold, modifier = Modifier.size(17.dp))
+            Icon(Icons.Default.MenuBook, contentDescription = null, tint = cc.gold, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(7.dp))
-            Text("明辨 · AI 助教", color = GoldText, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+            Text("明辨 · AI 助教", color = cc.goldText, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
         }
         Spacer(Modifier.height(6.dp))
-        Text(text, color = Ink, lineHeight = 24.sp, fontSize = 15.sp)
+        Text(text, color = cc.ink, lineHeight = 24.sp, fontSize = 15.sp)
     }
 }
 
 @Composable
 private fun UserBubble(text: String, label: String = "我的讲解") {
+    val cc = MingTheme.colors
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Spacer(Modifier.weight(0.12f))
         Column(
@@ -1038,20 +1070,21 @@ private fun UserBubble(text: String, label: String = "我的讲解") {
                 .weight(0.80f)
                 .clip(CardShape)
                 .background(Color.White)
-                .border(0.5.dp, Ink12, CardShape)
+                .border(0.5.dp, cc.ink12, CardShape)
                 .padding(14.dp)
         ) {
-            Text(label, color = Ink70, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(label, color = cc.ink70, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Spacer(Modifier.height(4.dp))
-            Text(text, color = Ink, lineHeight = 23.sp, fontSize = 15.sp)
+            Text(text, color = cc.ink, lineHeight = 23.sp, fontSize = 15.sp)
         }
         Spacer(Modifier.width(8.dp))
-        RoleAvatar("我", Ink)
+        RoleAvatar("我", cc.ink)
     }
 }
 
 @Composable
 private fun ThinkingCard() {
+    val cc = MingTheme.colors
     val transition = rememberInfiniteTransition(label = "thinking")
     val dotAlphas = (0..2).map { i ->
         transition.animateFloat(
@@ -1064,16 +1097,16 @@ private fun ThinkingCard() {
         )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        RoleAvatar("善", Color.White, JadeDeep)
+        RoleAvatar("善", Color.White, cc.jadeDeep)
         Spacer(Modifier.width(8.dp))
-        Surface(color = Jade10, shape = CardShape) {
+        Surface(color = cc.jade10, shape = CardShape) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("善问在想", color = JadeDeep, fontSize = 13.sp)
+                Text("善问在想", color = cc.jadeDeep, fontSize = 13.sp)
                 Spacer(Modifier.width(6.dp))
                 dotAlphas.forEach { a ->
                     Box(
                         Modifier.padding(horizontal = 1.dp).size(5.dp)
-                            .clip(CircleShape).background(Jade.copy(alpha = a.value))
+                            .clip(CircleShape).background(cc.jade.copy(alpha = a.value))
                     )
                 }
             }
@@ -1085,24 +1118,25 @@ private fun ThinkingCard() {
 private fun OptionRow(
     index: Int, text: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit
 ) {
+    val cc = MingTheme.colors
     Surface(
-        color = if (selected) Jade10 else Color.White,
+        color = if (selected) cc.jade10 else Color.White,
         shape = RoundedCornerShape(12.dp),
-        border = if (selected) BorderStroke(1.5.dp, Jade) else BorderStroke(1.dp, Ink12),
+        border = if (selected) BorderStroke(1.5.dp, cc.jade) else BorderStroke(1.dp, cc.ink12),
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(20.dp).clip(CircleShape)
-                    .border(1.5.dp, if (selected) Color.White else Ink12, CircleShape)
-                    .background(if (selected) Jade else Color.Transparent),
+                    .border(1.5.dp, if (selected) Color.White else cc.ink12, CircleShape)
+                    .background(if (selected) cc.jade else Color.Transparent),
                 contentAlignment = Alignment.Center
             ) {
                 if (selected) Text("✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                else if (index >= 0) Text("${index + 1}", color = Ink70, fontSize = 11.sp)
+                else if (index >= 0) Text("${index + 1}", color = cc.ink70, fontSize = 11.sp)
             }
             Spacer(Modifier.width(10.dp))
-            Text(text, fontSize = 14.sp, lineHeight = 21.sp, color = Ink, modifier = Modifier.weight(1f))
+            Text(text, fontSize = 14.sp, lineHeight = 21.sp, color = cc.ink, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -1118,6 +1152,7 @@ private fun ChoicePanel(
     sendLabel: String,
     onSend: (String) -> Unit
 ) {
+    val cc = MingTheme.colors
     var expanded by remember { mutableStateOf(false) }
     val escape = selected == options.size
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1130,7 +1165,7 @@ private fun ChoicePanel(
                 value = input, onValueChange = onInputChange,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
                 minLines = 2, maxLines = 4, enabled = !busy,
-                placeholder = { Text("用你自己的话说……", color = Ink70, fontSize = 13.sp) }
+                placeholder = { Text("用你自己的话说……", color = cc.ink70, fontSize = 13.sp) }
             )
         }
         Button(
@@ -1160,13 +1195,14 @@ private fun FreeTextPanel(
     onSend: (String) -> Unit,
     onFocused: () -> Unit
 ) {
+    val cc = MingTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = input, onValueChange = onInputChange,
             modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp)
                 .onFocusChanged { if (it.isFocused) onFocused() },
             minLines = 2, maxLines = 6, enabled = !busy,
-            placeholder = { Text(inputHint, color = Ink70, fontSize = 14.sp) }
+            placeholder = { Text(inputHint, color = cc.ink70, fontSize = 14.sp) }
         )
         Button(
             onClick = { if (input.isNotBlank() && !busy) onSend(input) },
@@ -1190,6 +1226,7 @@ private fun HistoryScreen(
     open: (SessionEntity) -> Unit,
     onExport: () -> Unit
 ) {
+    val cc = MingTheme.colors
     val done = sessions.filter { it.finishedAt > 0 }
     if (done.isEmpty()) {
         Column(
@@ -1197,12 +1234,12 @@ private fun HistoryScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(Icons.Default.MenuBook, null, tint = Jade, modifier = Modifier.size(44.dp))
+            Icon(Icons.Default.MenuBook, null, tint = cc.jade, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(12.dp))
             Text("尚无研习笔记", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(6.dp))
             Text("完成一节课后，你的初讲、卡点与重讲都会留在这里。",
-                fontSize = 13.sp, color = Ink70, lineHeight = 21.sp)
+                fontSize = 13.sp, color = cc.ink70, lineHeight = 21.sp)
         }
         return
     }
@@ -1211,8 +1248,8 @@ private fun HistoryScreen(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("研习笔记", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
-            Text("导出", color = Jade, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            Text("研习笔记", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.ink, modifier = Modifier.weight(1f))
+            Text("导出", color = cc.jade, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clickable { onExport() })
         }
         LazyColumn(
@@ -1229,19 +1266,19 @@ private fun HistoryScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(s.finishedAt)),
-                                fontSize = 11.sp, color = Ink70
+                                fontSize = 11.sp, color = cc.ink70
                             )
                             Spacer(Modifier.weight(1f))
-                            Surface(color = Jade10, shape = RoundedCornerShape(6.dp)) {
-                                Text(s.path, fontSize = 10.sp, color = JadeDeep,
+                            Surface(color = cc.jade10, shape = RoundedCornerShape(6.dp)) {
+                                Text(s.path, fontSize = 10.sp, color = cc.jadeDeep,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
                         }
                         Text(
                             s.prompt.ifBlank { s.topic }, fontSize = 15.sp, lineHeight = 22.sp,
-                            fontWeight = FontWeight.Medium, color = Ink, maxLines = 2, overflow = TextOverflow.Ellipsis
+                            fontWeight = FontWeight.Medium, color = cc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis
                         )
-                        Text(s.topic, fontSize = 11.sp, color = GoldText)
+                        Text(s.topic, fontSize = 11.sp, color = cc.goldText)
                     }
                 }
             }
@@ -1254,93 +1291,195 @@ private fun HistoryScreen(
 /*  设置                                                               */
 /* ------------------------------------------------------------------ */
 
+
+/** 设置页的分组卡片 */
+@Composable
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    val cc = MingTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            title, color = cc.goldText, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            modifier = Modifier.padding(start = 4.dp)
+        )
+        Surface(color = cc.surface, shape = RoundedCornerShape(16.dp), shadowElevation = 1.dp) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+        }
+    }
+}
+
 @Composable
 private fun SettingsScreen(
-    hasKey: Boolean, draft: String, changeDraft: (String) -> Unit, save: () -> Unit, delete: () -> Unit
+    hasKey: Boolean,
+    draft: String,
+    changeDraft: (String) -> Unit,
+    save: () -> Unit,
+    delete: () -> Unit,
+    themeMode: String,
+    onThemeMode: (String) -> Unit,
+    stats: DataStats,
+    onExport: (String) -> Unit
 ) {
+    val cc = MingTheme.colors
     var visible by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("删除密钥") },
-            text = { Text("将删除本机加密保存的 API Key，删除后需重新配置才能研习。") },
+            text = { Text("将删除本机加密保存的 API Key，删除后需重新配置才能研习。学习记录不受影响。") },
             confirmButton = {
-                TextButton(onClick = { confirmDelete = false; delete() }) { Text("删除", color = Vermilion) }
+                TextButton(onClick = { confirmDelete = false; delete() }) { Text("删除", color = cc.vermilion) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("取消", color = Ink70) }
+                TextButton(onClick = { confirmDelete = false }) { Text("取消", color = cc.ink70) }
             }
         )
     }
+
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         item {
-            Text("DeepSeek API", fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (hasKey) "状态：已保存加密密钥" else "状态：尚未配置",
-                color = if (hasKey) Jade else Vermilion, fontSize = 13.sp, maxLines = 1
-            )
+            Text("设置", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = cc.ink)
         }
+
+        /* ---------------- 外观 ---------------- */
         item {
-            OutlinedTextField(
-                value = draft, onValueChange = changeDraft, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("API Key") },
-                visualTransformation = if (visible) androidx.compose.ui.text.input.VisualTransformation.None
-                    else androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { visible = !visible }) {
-                        Icon(
-                            if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = "显示或隐藏"
-                        )
+            SettingsSection("外观") {
+                Text("主题", fontSize = 14.sp, color = cc.ink, fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (mode, label) ->
+                        val sel = themeMode == mode
+                        Surface(
+                            color = if (sel) cc.jade else Color.Transparent,
+                            shape = RoundedCornerShape(18.dp),
+                            border = if (sel) null else BorderStroke(1.dp, cc.ink12),
+                            modifier = Modifier.clickable { onThemeMode(mode) }
+                        ) {
+                            Text(
+                                label, fontSize = 13.sp, maxLines = 1,
+                                color = if (sel) Color.White else cc.ink70,
+                                fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                            )
+                        }
                     }
                 }
-            )
-        }
-        item {
-            Button(
-                onClick = save, enabled = draft.isNotBlank(), modifier = Modifier.fillMaxWidth().height(46.dp),
-                shape = BtnShape
-            ) { Text("保存", maxLines = 1) }
-        }
-        if (hasKey) {
-            item {
-                OutlinedButton(
-                    onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = BtnShape, border = BorderStroke(1.dp, Vermilion)
-                ) { Text("删除密钥", color = Vermilion, maxLines = 1) }
             }
         }
+
+        /* ---------------- AI 服务 ---------------- */
         item {
-            HorizontalDivider(color = Ink12, thickness = 0.5.dp)
-            Spacer(Modifier.height(4.dp))
-            Text("学习方式", color = GoldText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text(
-                "明心只做一件事：让你把理解讲出来，然后自己发现哪里没讲清。\n\n" +
-                    "· 善问只负责把你逼到说不动的地方，不纠正、不给答案。\n" +
-                    "· 卡点由你自己认领，不是 AI 判定的。\n" +
-                    "· 理解卡会按记忆曲线回来找你重讲。\n" +
-                    "· 明辨只做定性判断，不打分。",
-                lineHeight = 21.sp, fontSize = 13.sp, color = Ink70
-            )
+            SettingsSection("AI 服务") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("DeepSeek", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cc.ink,
+                        modifier = Modifier.weight(1f))
+                    Text(
+                        if (hasKey) "已配置" else "未配置",
+                        color = if (hasKey) cc.jade else cc.vermilion, fontSize = 12.sp
+                    )
+                }
+                OutlinedTextField(
+                    value = draft, onValueChange = changeDraft, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("API Key") },
+                    visualTransformation = if (visible) androidx.compose.ui.text.input.VisualTransformation.None
+                        else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { visible = !visible }) {
+                            Icon(
+                                if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = "显示或隐藏"
+                            )
+                        }
+                    }
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = save, enabled = draft.isNotBlank(),
+                        modifier = Modifier.weight(1f).height(44.dp), shape = BtnShape
+                    ) { Text("保存", maxLines = 1) }
+                    if (hasKey) {
+                        OutlinedButton(
+                            onClick = { confirmDelete = true },
+                            modifier = Modifier.weight(1f).height(44.dp), shape = BtnShape,
+                            border = BorderStroke(1.dp, cc.vermilion)
+                        ) { Text("删除", color = cc.vermilion, maxLines = 1) }
+                    }
+                }
+                Text("模型：deepseek-flash · 费用由你自己的账户承担", fontSize = 11.sp, color = cc.ink70)
+            }
         }
+
+        /* ---------------- 学习数据 ---------------- */
         item {
-            Text("接口与模型", color = GoldText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text("模型：deepseek-flash", color = Jade, fontSize = 13.sp)
+            SettingsSection("学习数据") {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StatCell("完成研习", "${stats.sessions}", Modifier.weight(1f))
+                    StatCell("理解卡", "${stats.insights}", Modifier.weight(1f))
+                    StatCell("已想通", "${stats.resolved}", Modifier.weight(1f))
+                }
+                HorizontalDivider(color = cc.ink12, thickness = 0.5.dp)
+                Text(
+                    "所有记录只存在这台手机。换机或备份请导出后保存。",
+                    fontSize = 12.sp, lineHeight = 18.sp, color = cc.ink70
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { onExport("json") },
+                        modifier = Modifier.weight(1f).height(44.dp), shape = BtnShape,
+                        border = BorderStroke(1.dp, cc.jade)
+                    ) { Text("导出 JSON", color = cc.jade, fontSize = 13.sp, maxLines = 1) }
+                    OutlinedButton(
+                        onClick = { onExport("markdown") },
+                        modifier = Modifier.weight(1f).height(44.dp), shape = BtnShape,
+                        border = BorderStroke(1.dp, cc.jade)
+                    ) { Text("导出 Markdown", color = cc.jade, fontSize = 13.sp, maxLines = 1) }
+                }
+            }
         }
+
+        /* ---------------- 关于 ---------------- */
         item {
-            Text("隐私与费用", color = GoldText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Text(
-                "密钥仅存储在本机并由 Android Keystore 加密；学习内容在请求时发送给 DeepSeek 处理。" +
-                    "本 App 没有中转服务器，也不代付 API 费用。建议为账户设置费用上限。\n" +
-                    "所有学习记录只存在本机，可随时在笔记页导出。",
-                lineHeight = 21.sp, fontSize = 13.sp, color = Ink70
-            )
+            SettingsSection("关于") {
+                Row {
+                    Text("版本", fontSize = 13.sp, color = cc.ink70, modifier = Modifier.weight(1f))
+                    Text("0.9.3", fontSize = 13.sp, color = cc.ink)
+                }
+                Row {
+                    Text("数据存储", fontSize = 13.sp, color = cc.ink70, modifier = Modifier.weight(1f))
+                    Text("本机 Room 数据库", fontSize = 13.sp, color = cc.ink)
+                }
+                Row {
+                    Text("网络", fontSize = 13.sp, color = cc.ink70, modifier = Modifier.weight(1f))
+                    Text("仅调用 DeepSeek 接口", fontSize = 13.sp, color = cc.ink)
+                }
+                HorizontalDivider(color = cc.ink12, thickness = 0.5.dp)
+                Text(
+                    "明心只做一件事：让你把理解讲出来，然后自己发现哪里没讲清。\n\n" +
+                        "· 善问只负责把你逼到说不动的地方，不纠正、不给答案。\n" +
+                        "· 卡点由你自己认领，不是 AI 判定的。\n" +
+                        "· 理解卡按记忆曲线回来找你重讲。\n" +
+                        "· 明辨只做定性判断，不打分。",
+                    lineHeight = 20.sp, fontSize = 12.sp, color = cc.ink70
+                )
+                Text(
+                    "AI 生成的义理判断未经专家校勘，引用前请回查原典。",
+                    fontSize = 11.sp, color = cc.vermilion.copy(alpha = 0.85f)
+                )
+            }
         }
+        item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+@Composable
+private fun StatCell(label: String, value: String, modifier: Modifier = Modifier) {
+    val cc = MingTheme.colors
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = cc.jade)
+        Text(label, fontSize = 11.sp, color = cc.ink70, maxLines = 1)
     }
 }

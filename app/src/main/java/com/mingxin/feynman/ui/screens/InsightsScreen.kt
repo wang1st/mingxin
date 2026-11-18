@@ -37,6 +37,7 @@ fun InsightsScreen(
     onReopen: (InsightEntity) -> Unit,
     onDelete: (InsightEntity) -> Unit
 ) {
+    val cc = MingTheme.colors
     val now = System.currentTimeMillis()
     val due = insights.filter { it.status == "OPEN" && it.nextReviewAt in 1..now }.sortedBy { it.nextReviewAt }
     val scheduled = insights.filter { it.status == "OPEN" && it.nextReviewAt > now }.sortedBy { it.nextReviewAt }
@@ -56,14 +57,14 @@ fun InsightsScreen(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("待重讲 ${due.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Text("待重讲 ${due.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.ink)
                 Text(
                     when {
                         due.isNotEmpty() -> "这些问题是你自己认领的。现在讲得通了吗？"
                         scheduled.isNotEmpty() -> "今天没有到期的卡点。下一次：${dateLabel(scheduled.first().nextReviewAt)}"
                         else -> "还没有卡点。上完一节课后，你会在这里认领自己的卡点。"
                     },
-                    fontSize = 13.sp, lineHeight = 20.sp, color = Ink70
+                    fontSize = 13.sp, lineHeight = 20.sp, color = cc.ink70
                 )
             }
         }
@@ -106,6 +107,7 @@ private fun DueInsightCard(
     onReview: (InsightEntity, Int, String) -> Unit,
     onPark: (InsightEntity) -> Unit
 ) {
+    val cc = MingTheme.colors
     var retell by remember(item.id) { mutableStateOf("") }
     var expanding by remember(item.id) { mutableStateOf(false) }
 
@@ -113,49 +115,49 @@ private fun DueInsightCard(
         color = Color.White,
         shape = RoundedCornerShape(14.dp),
         shadowElevation = 3.dp,
-        border = BorderStroke(1.5.dp, Gold),
+        border = BorderStroke(1.5.dp, cc.gold),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = Gold12, shape = RoundedCornerShape(6.dp)) {
+                Surface(color = cc.gold12, shape = RoundedCornerShape(6.dp)) {
                     Text(
-                        item.path, fontSize = 11.sp, color = GoldText, fontWeight = FontWeight.Bold,
+                        item.path, fontSize = 11.sp, color = cc.goldText, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                     )
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
                     if (item.intervalDays <= 0) "首次" else "间隔 ${item.intervalDays} 天",
-                    fontSize = 11.sp, color = Ink70
+                    fontSize = 11.sp, color = cc.ink70
                 )
             }
 
-            Text(item.stuckAt, fontSize = 15.sp, lineHeight = 23.sp, color = Ink, fontWeight = FontWeight.Medium)
+            Text(item.stuckAt, fontSize = 15.sp, lineHeight = 23.sp, color = cc.ink, fontWeight = FontWeight.Medium)
 
             if (item.triggerQuestion.isNotBlank()) {
                 Text(
                     "当时被问：${item.triggerQuestion}",
-                    fontSize = 12.sp, lineHeight = 18.sp, color = Ink70, maxLines = 2,
+                    fontSize = 12.sp, lineHeight = 18.sp, color = cc.ink70, maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Text(item.topic, fontSize = 11.sp, color = Ink70)
+            Text(item.topic, fontSize = 11.sp, color = cc.ink70)
 
-            HorizontalDivider(color = Ink12, thickness = 0.5.dp)
+            HorizontalDivider(color = cc.ink12, thickness = 0.5.dp)
 
-            Text("现在能讲通了吗？", fontSize = 12.sp, color = Ink70)
+            Text("现在能讲通了吗？", fontSize = 12.sp, color = cc.ink70)
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                GradeChip("还是卡", Vermilion) { onReview(item, 1, retell) }
-                GradeChip("说清些", Gold) { onReview(item, 2, retell) }
-                GradeChip("讲通了", Jade) { onReview(item, 3, retell) }
-                GradeChip("很熟", JadeDeep) { onReview(item, 4, retell) }
+                GradeChip("还是卡", cc.vermilion) { onReview(item, 1, retell) }
+                GradeChip("说清些", cc.gold) { onReview(item, 2, retell) }
+                GradeChip("讲通了", cc.jade) { onReview(item, 3, retell) }
+                GradeChip("很熟", cc.jadeDeep) { onReview(item, 4, retell) }
             }
 
             if (!expanding) {
                 Text(
-                    "＋ 重讲一遍（可选）", color = Jade, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    "＋ 重讲一遍（可选）", color = cc.jade, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clickable { expanding = true }
                 )
             } else {
@@ -163,17 +165,17 @@ private fun DueInsightCard(
                     value = retell, onValueChange = { retell = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
                     minLines = 3, maxLines = 5,
-                    placeholder = { Text("这次我这样讲……", fontSize = 13.sp, color = Ink70) }
+                    placeholder = { Text("这次我这样讲……", fontSize = 13.sp, color = cc.ink70) }
                 )
                 Text(
                     "写完再点上面的评价，会一起记下来。",
-                    fontSize = 11.sp, color = Ink70
+                    fontSize = 11.sp, color = cc.ink70
                 )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
-                    "先搁置", color = Ink70, fontSize = 12.sp,
+                    "先搁置", color = cc.ink70, fontSize = 12.sp,
                     modifier = Modifier.clickable { onPark(item) }
                 )
             }
@@ -188,33 +190,34 @@ private fun CompactInsightCard(
     onDelete: (InsightEntity) -> Unit,
     trailing: () -> String
 ) {
+    val cc = MingTheme.colors
     val isDone = item.status == "RESOLVED"
     Surface(
         color = Color.White,
         shape = RoundedCornerShape(12.dp),
         shadowElevation = 1.dp,
-        border = BorderStroke(1.dp, Ink12),
+        border = BorderStroke(1.dp, cc.ink12),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(
                 item.stuckAt, fontSize = 14.sp, lineHeight = 21.sp,
-                color = if (isDone) Ink70 else Ink,
+                color = if (isDone) cc.ink70 else cc.ink,
                 maxLines = 2, overflow = TextOverflow.Ellipsis
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "${item.path} · ${item.topic} · ${trailing()}",
-                    fontSize = 11.sp, color = Ink70, maxLines = 1
+                    fontSize = 11.sp, color = cc.ink70, maxLines = 1
                 )
                 Spacer(Modifier.weight(1f))
                 if (isDone) {
-                    Text("重新打开", color = Jade, fontSize = 11.sp,
+                    Text("重新打开", color = cc.jade, fontSize = 11.sp,
                         modifier = Modifier.clickable { onReopen(item) })
                     Spacer(Modifier.width(10.dp))
                 }
                 Icon(
-                    Icons.Default.Close, "删除", tint = Ink70,
+                    Icons.Default.Close, "删除", tint = cc.ink70,
                     modifier = Modifier.size(15.dp).clickable { onDelete(item) }
                 )
             }
@@ -238,24 +241,26 @@ private fun GradeChip(label: String, tint: Color, onClick: () -> Unit) {
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, color = Ink70, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+    val cc = MingTheme.colors
+    Text(text, color = cc.ink70, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(top = 10.dp))
 }
 
 @Composable
 private fun EmptyInsights() {
+    val cc = MingTheme.colors
     Column(
         Modifier.fillMaxSize().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.Lightbulb, null, tint = Jade, modifier = Modifier.size(44.dp))
+        Icon(Icons.Default.Lightbulb, null, tint = cc.jade, modifier = Modifier.size(44.dp))
         Spacer(Modifier.height(12.dp))
         Text("还没有理解卡", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(Modifier.height(6.dp))
         Text(
             "上完一节课，你会自己认领「哪里卡住了」，\n那个问题就会变成一张理解卡，按时回来找你重讲。",
-            fontSize = 13.sp, color = Ink70, lineHeight = 21.sp
+            fontSize = 13.sp, color = cc.ink70, lineHeight = 21.sp
         )
     }
 }

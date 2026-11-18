@@ -33,6 +33,7 @@ fun ClaimScreen(
     onClaim: (stuckAt: String, trigger: String) -> Unit,
     onFinish: () -> Unit
 ) {
+    val cc = MingTheme.colors
     var selectedTrigger by remember { mutableStateOf("") }
     var stuckText by remember { mutableStateOf("") }
     var viewingAll by remember { mutableStateOf(true) }
@@ -44,11 +45,11 @@ fun ClaimScreen(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("哪里卡住了？", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Ink)
+                Text("哪里卡住了？", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = cc.ink)
                 Text(
                     "下面这些问题，哪个让你答不下去、或者答得心虚？\n" +
                         "选一个，再用自己的话写下你卡在哪。这个问题会成为你的「理解卡」，日后回来重讲。",
-                    fontSize = 13.sp, lineHeight = 21.sp, color = Ink70
+                    fontSize = 13.sp, lineHeight = 21.sp, color = cc.ink70
                 )
             }
         }
@@ -56,19 +57,19 @@ fun ClaimScreen(
         if (!viewingAll) {
             item {
                 TextButton(onClick = { viewingAll = true; selectedTrigger = "" }) {
-                    Text("← 重新选择", color = Jade, fontSize = 13.sp)
+                    Text("← 重新选择", color = cc.jade, fontSize = 13.sp)
                 }
             }
         }
 
         item {
             Surface(
-                color = Jade10, shape = RoundedCornerShape(12.dp),
+                color = cc.jade10, shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     "你也可以说：我其实讲通了，没有卡住。\n那就直接点最下面的「完成认领」。",
-                    fontSize = 12.sp, lineHeight = 19.sp, color = JadeDeep,
+                    fontSize = 12.sp, lineHeight = 19.sp, color = cc.jadeDeep,
                     modifier = Modifier.padding(12.dp)
                 )
             }
@@ -78,22 +79,22 @@ fun ClaimScreen(
             val num = i + 1
             val ok = selectedTrigger == qa.question
             Surface(
-                color = if (ok) Jade10 else Color.White,
+                color = if (ok) cc.jade10 else Color.White,
                 shape = RoundedCornerShape(14.dp),
                 shadowElevation = if (ok) 4.dp else 1.dp,
-                border = BorderStroke(1.5.dp, if (ok) Jade else Ink12),
+                border = BorderStroke(1.5.dp, if (ok) cc.jade else cc.ink12),
                 modifier = Modifier.fillMaxWidth().clickable {
                     selectedTrigger = if (ok) "" else qa.question
                     stuckText = ""
                 }
             ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("追问 $num", fontSize = 11.sp, color = GoldText, fontWeight = FontWeight.Bold)
-                    Text(qa.question, fontSize = 15.sp, lineHeight = 22.sp, color = Ink, fontWeight = FontWeight.Medium)
+                    Text("追问 $num", fontSize = 11.sp, color = cc.goldText, fontWeight = FontWeight.Bold)
+                    Text(qa.question, fontSize = 15.sp, lineHeight = 22.sp, color = cc.ink, fontWeight = FontWeight.Medium)
                     if (qa.answer.isNotBlank()) {
                         Text(
                             "你当时答：${qa.answer}",
-                            fontSize = 13.sp, lineHeight = 20.sp, color = Ink70, maxLines = 3
+                            fontSize = 13.sp, lineHeight = 20.sp, color = cc.ink70, maxLines = 3
                         )
                     }
                 }
@@ -103,16 +104,16 @@ fun ClaimScreen(
         if (selectedTrigger.isNotBlank()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("用你自己的话，写下卡在哪", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                    Text("用你自己的话，写下卡在哪", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = cc.ink)
                     Text(
                         "不要复述那个问题。要写下你真正不懂的是什么。\n例：「我不懂'无分别智'和'不分别'到底差在哪里」",
-                        fontSize = 12.sp, lineHeight = 18.sp, color = Ink70
+                        fontSize = 12.sp, lineHeight = 18.sp, color = cc.ink70
                     )
                     OutlinedTextField(
                         value = stuckText, onValueChange = { stuckText = it },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
                         minLines = 3, maxLines = 6,
-                        placeholder = { Text("我卡在……", color = Ink70, fontSize = 14.sp) }
+                        placeholder = { Text("我卡在……", color = cc.ink70, fontSize = 14.sp) }
                     )
                     Button(
                         onClick = {
@@ -133,17 +134,17 @@ fun ClaimScreen(
         if (claimed.isNotEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("已认领 ${claimed.size} 个卡点", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Jade)
+                    Text("已认领 ${claimed.size} 个卡点", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = cc.jade)
                     claimed.forEach { c ->
                         Surface(
                             color = Color.White, shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, Jade.copy(alpha = 0.3f)),
+                            border = BorderStroke(1.dp, cc.jade.copy(alpha = 0.3f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-                                Text("●", color = Jade, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+                                Text("●", color = cc.jade, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text(c, fontSize = 13.sp, lineHeight = 20.sp, color = Ink)
+                                Text(c, fontSize = 13.sp, lineHeight = 20.sp, color = cc.ink)
                             }
                         }
                     }
@@ -159,7 +160,7 @@ fun ClaimScreen(
                         onClick = onFinish,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = BtnShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = Jade)
+                        colors = ButtonDefaults.buttonColors(containerColor = cc.jade)
                     ) {
                         Text("带着这些问题去查，回来重讲（${claimed.size}）", fontSize = 14.sp, maxLines = 1)
                     }
@@ -167,7 +168,7 @@ fun ClaimScreen(
                 TextButton(onClick = onFinish, modifier = Modifier.fillMaxWidth()) {
                     Text(
                         if (claimed.isEmpty()) "我讲通了，没有卡住 →" else "先不认领更多，直接重讲",
-                        color = Ink70, fontSize = 13.sp
+                        color = cc.ink70, fontSize = 13.sp
                     )
                 }
             }

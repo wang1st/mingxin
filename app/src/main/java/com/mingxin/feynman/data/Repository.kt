@@ -150,6 +150,8 @@ class Repository(private val ctx: Context) {
         )
     }
 
+    suspend fun reviewCount(): Int = reviewLogDao.count()
+
     suspend fun parkInsight(insight: InsightEntity) = insightDao.upsert(insight.copy(status = "PARKED"))
 
     suspend fun reopenInsight(insight: InsightEntity) = insightDao.upsert(insight.copy(status = "OPEN"))

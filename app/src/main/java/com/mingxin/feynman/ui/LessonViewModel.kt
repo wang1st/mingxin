@@ -20,6 +20,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+/** 数据概览 */
+data class DataStats(
+    val sessions: Int = 0,
+    val insights: Int = 0,
+    val resolved: Int = 0,
+    val reviews: Int = 0
+)
+
 /** 一轮问答 */
 data class QaItem(val question: String, val answer: String, val options: List<String> = emptyList())
 
@@ -71,6 +79,20 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
+    /** Theme mode: "system" | "light" | "dark" */
+    private val themePrefs = app.getSharedPreferences("mingxin_prefs", android.content.Context.MODE_PRIVATE)
+    private val _themeMode = MutableStateFlow(themePrefs.getString("theme_mode", "system") ?: "system")
+    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: String) {
+        _themeMode.value = mode
+        themePrefs.edit().putString("theme_mode", mode).apply()
+    }
+
+    /** 数据概览，供设置页展示 */
+    private val _stats = MutableStateFlow(DataStats())
+    val stats: StateFlow<DataStats> = _stats.asStateFlow()
+
     private val _questions = MutableStateFlow<List<QuestionEntity>>(emptyList())
     val questions: StateFlow<List<QuestionEntity>> = _questions.asStateFlow()
 
@@ -97,6 +119,7 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
                 _hasKey.value = secrets.hasKey()
                 repo.activeSession()?.let { _session.value = it.toUi() }
                 refreshDue()
+                refreshStats()
             }.onFailure {
                 _error.value = "初始化失败：${it.message ?: it.javaClass.simpleName}"
             }
@@ -348,7 +371,22 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshDue() {
-        viewModelScope.launch { _dueCount.value = repo.dueCount() }
+        viewModelScope.launch {
+            _dueCount.value = repo.dueCount()
+            refreshStats()
+        }
+    }
+
+    fun refreshStats() {
+        viewModelScope.launch {
+            val all = repo.allInsights()
+            _stats.value = DataStats(
+                sessions = repo.allSessions().count { it.finishedAt > 0 },
+                insights = all.size,
+                resolved = all.count { it.status == "RESOLVED" },
+                reviews = repo.reviewCount()
+            )
+        }
     }
 
     // ---------------- 持久化 ----------------

@@ -81,6 +81,9 @@ interface ReviewLogDao {
 
     @Query("SELECT * FROM review_log ORDER BY reviewedAt DESC")
     suspend fun all(): List<ReviewLogEntity>
+
+    @Query("SELECT COUNT(*) FROM review_log")
+    suspend fun count(): Int
 }
 
 @Dao
