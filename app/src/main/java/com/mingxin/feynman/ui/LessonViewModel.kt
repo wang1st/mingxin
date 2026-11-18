@@ -89,12 +89,17 @@ class LessonViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            repo.initialize()
-            repo.scheduleUnscheduled()
-            _questions.value = repo.allQuestions()
-            _hasKey.value = secrets.hasKey()
-            repo.activeSession()?.let { _session.value = it.toUi() }
-            refreshDue()
+            // 初始化失败必须暴露出来，否则界面会永远白屏
+            runCatching {
+                repo.initialize()
+                repo.scheduleUnscheduled()
+                _questions.value = repo.allQuestions()
+                _hasKey.value = secrets.hasKey()
+                repo.activeSession()?.let { _session.value = it.toUi() }
+                refreshDue()
+            }.onFailure {
+                _error.value = "初始化失败：${it.message ?: it.javaClass.simpleName}"
+            }
             _ready.value = true
         }
     }

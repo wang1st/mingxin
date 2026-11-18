@@ -83,6 +83,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 本地崩溃日志：出问题能从手机上直接捞
+        val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runCatching {
+                val f = java.io.File(filesDir, "crash.log")
+                f.appendText(
+                    "\n=== ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())} ===\n" +
+                        throwable.stackTraceToString() + "\n"
+                )
+            }
+            prevHandler?.uncaughtException(thread, throwable)
+        }
         enableEdgeToEdge()
 
         tts = TextToSpeech(this) { result ->
@@ -116,7 +128,9 @@ class MainActivity : ComponentActivity() {
                 val sessionInsights by vm.sessionInsights.collectAsStateWithLifecycle()
 
                 val navController = androidx.navigation.compose.rememberNavController()
-                navControllerHook = { route -> navController.navigate(route) { launchSingleTop = true } }
+                val goTo: (String) -> Unit = remember(navController) {
+                    { route -> navController.navigate(route) { launchSingleTop = true } }
+                }
                 val backStackEntry by navController.currentBackStackEntryFlow.collectAsState(initial = null)
                 val page = backStackEntry?.destination?.route ?: "home"
 
@@ -136,14 +150,14 @@ class MainActivity : ComponentActivity() {
                         error = error,
                         hasKey = hasKey,
                         speaking = speaking,
-                        onStartQuestion = { q, path -> vm.startQuestion(q, path); go("lesson") },
-                        onCustomTopic = { t, path -> vm.startCustom(t, path); go("lesson") },
-                        onOpenSession = { s -> vm.openSession(s); go("lesson") },
+                        onStartQuestion = { q, path -> vm.startQuestion(q, path); goTo("lesson") },
+                        onCustomTopic = { t, path -> vm.startCustom(t, path); goTo("lesson") },
+                        onOpenSession = { s -> vm.openSession(s); goTo("lesson") },
                         onSubmitFirst = vm::submitFirstExplanation,
                         onAnswer = vm::answerQuestion,
-                        onGoClaim = { vm.goToClaim(); go("claim") },
+                        onGoClaim = { vm.goToClaim(); goTo("claim") },
                         onClaim = vm::claimInsight,
-                        onFinishClaim = { vm.finishClaiming(); go("lesson") },
+                        onFinishClaim = { vm.finishClaiming(); goTo("lesson") },
                         onSubmitRevision = vm::submitRevision,
                         onReviewInsight = vm::reviewInsight,
                         onParkInsight = vm::parkInsight,
@@ -199,10 +213,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-
-/** Composable 内部无法直接持有 Activity 方法，用这个钩子暴露导航 */
-private var navControllerHook: ((String) -> Unit)? = null
-private fun go(route: String) { navControllerHook?.invoke(route) }
 
 @Composable
 private fun LoadingScreen() {
