@@ -344,7 +344,7 @@ private fun MainUI(
         bottomBar = {
             if (page != "lesson" && page != "claim") {
                 Box {
-                    Surface(color = Color.White, shadowElevation = 10.dp) {
+                    Surface(color = cc.surface, shadowElevation = 10.dp) {
                         Row(
                             Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -450,7 +450,7 @@ private fun PathChips(current: String, onChange: (String) -> Unit) {
         PATH_OPTIONS.forEach { p ->
             val sel = p == current
             Surface(
-                color = if (sel) cc.jade else Color.White,
+                color = if (sel) cc.jade else cc.surface,
                 shape = RoundedCornerShape(14.dp),
                 border = if (sel) null else BorderStroke(1.dp, cc.ink12),
                 modifier = Modifier.clickable { onChange(p) }
@@ -508,7 +508,7 @@ private fun HomeScreen(
                 Box(
                     Modifier.size(40.dp).clip(CircleShape).background(cc.jade10),
                     contentAlignment = Alignment.Center
-                ) { Text("明", color = cc.jadeDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                ) { Text("明", color = if (cc.isDark) cc.jade else cc.jadeDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text("${greeting()}，欢迎回来", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.ink)
@@ -520,7 +520,7 @@ private fun HomeScreen(
         // 今日该做的事：待重讲的卡
         item {
             Surface(
-                color = Color.White, shape = CardShape, shadowElevation = 2.dp,
+                color = cc.surface, shape = CardShape, shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -550,11 +550,11 @@ private fun HomeScreen(
         if (inFlight) {
             item {
                 Surface(
-                    color = cc.jade, shape = CardShape, shadowElevation = 4.dp,
+                    color = if (cc.isDark) cc.jadeDeep else cc.jade, shape = CardShape, shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth().clickable { onResume() }
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("继续上次的研习", color = Color(0xFFBFD8CC), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("继续上次的研习", color = cc.onJadeSub, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         Text(session.topic, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2)
                         Text(
                             when (session.stage) {
@@ -564,7 +564,7 @@ private fun HomeScreen(
                                 "REVISIT" -> "回去查过了，来重讲"
                                 else -> "继续"
                             },
-                            color = Color(0xFFBFD8CC), fontSize = 12.sp
+                            color = cc.onJadeSub, fontSize = 12.sp
                         )
                     }
                 }
@@ -575,18 +575,18 @@ private fun HomeScreen(
         if (next != null && !inFlight) {
             item {
                 Surface(
-                    color = cc.jade, shape = CardShape, shadowElevation = 4.dp,
+                    color = if (cc.isDark) cc.jadeDeep else cc.jade, shape = CardShape, shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("下一题 · ${next.sutra}", color = Color(0xFFBFD8CC), fontSize = 12.sp,
+                            Text("下一题 · ${next.sutra}", color = cc.onJadeSub, fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                             DifficultyDots(next.difficulty, Color.White)
                         }
                         Text(next.question, color = Color.White, fontSize = 18.sp,
                             lineHeight = 26.sp, fontWeight = FontWeight.Bold)
-                        Text("拟站在：$selectedPath", color = Color(0xFFBFD8CC), fontSize = 12.sp)
+                        Text("拟站在：$selectedPath", color = cc.onJadeSub, fontSize = 12.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             PATH_OPTIONS.take(4).forEach { p ->
                                 val sel = p == selectedPath
@@ -608,7 +608,10 @@ private fun HomeScreen(
                             onClick = { onStart(next) },
                             modifier = Modifier.fillMaxWidth().height(46.dp),
                             shape = BtnShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = cc.jadeDeep)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (cc.isDark) cc.paper else Color.White,
+                                contentColor = if (cc.isDark) cc.ink else cc.jadeDeep
+                            )
                         ) { Text("开始研习", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
@@ -638,7 +641,7 @@ private fun QuickChip(
 ) {
     val cc = MingTheme.colors
     Surface(
-        color = Color.White, shape = CardShape, shadowElevation = 2.dp,
+        color = cc.surface, shape = CardShape, shadowElevation = 2.dp,
         modifier = modifier.clickable(onClick = onClick)
     ) {
         Column(
@@ -695,7 +698,7 @@ private fun BrowseScreen(
         ) {
             items(topics) { group ->
                 Surface(
-                    color = Color.White, shape = CardShape, shadowElevation = 2.dp,
+                    color = cc.surface, shape = CardShape, shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth().clickable { onPickGroup(group) }
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -725,7 +728,7 @@ private fun TopicScreen(group: TopicGroup, onStart: (QuestionEntity) -> Unit) {
         }
         items(group.questions) { q ->
             Surface(
-                color = Color.White, shape = CardShape, shadowElevation = 2.dp,
+                color = cc.surface, shape = CardShape, shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth().clickable { onStart(q) }
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -893,7 +896,7 @@ private fun LessonScreen(
                         Text("你认领的卡点", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = cc.goldText)
                         sessionInsights.forEach { c ->
                             Surface(
-                                color = Color.White, shape = RoundedCornerShape(10.dp),
+                                color = cc.surface, shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, cc.gold.copy(alpha = 0.4f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -918,7 +921,7 @@ private fun LessonScreen(
                     Surface(color = cc.jade10, shape = CardShape, modifier = Modifier.fillMaxWidth()) {
                         Text(
                             "你没有认领任何卡点——说明这次讲得比较透。\n也可以再讲一遍，看看能讲出什么新东西。",
-                            fontSize = 13.sp, lineHeight = 21.sp, color = cc.jadeDeep,
+                            fontSize = 13.sp, lineHeight = 21.sp, color = if (cc.isDark) cc.jade else cc.jadeDeep,
                             modifier = Modifier.padding(14.dp)
                         )
                     }
@@ -1024,7 +1027,7 @@ private fun StudentCard(text: String, active: Boolean = false, onSpeak: () -> Un
                 .padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("善问 · AI 学生", color = Color(0xFFD9E8E0), fontWeight = FontWeight.Bold,
+                Text("善问 · AI 学生", color = cc.onJadeSub, fontWeight = FontWeight.Bold,
                     fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
                 IconButton(onClick = onSpeak, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -1069,7 +1072,7 @@ private fun UserBubble(text: String, label: String = "我的讲解") {
             Modifier
                 .weight(0.80f)
                 .clip(CardShape)
-                .background(Color.White)
+                .background(cc.surface)
                 .border(0.5.dp, cc.ink12, CardShape)
                 .padding(14.dp)
         ) {
@@ -1101,7 +1104,7 @@ private fun ThinkingCard() {
         Spacer(Modifier.width(8.dp))
         Surface(color = cc.jade10, shape = CardShape) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("善问在想", color = cc.jadeDeep, fontSize = 13.sp)
+                Text("善问在想", color = if (cc.isDark) cc.jade else cc.jadeDeep, fontSize = 13.sp)
                 Spacer(Modifier.width(6.dp))
                 dotAlphas.forEach { a ->
                     Box(
@@ -1120,7 +1123,7 @@ private fun OptionRow(
 ) {
     val cc = MingTheme.colors
     Surface(
-        color = if (selected) cc.jade10 else Color.White,
+        color = if (selected) cc.jade10 else cc.surface,
         shape = RoundedCornerShape(12.dp),
         border = if (selected) BorderStroke(1.5.dp, cc.jade) else BorderStroke(1.dp, cc.ink12),
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
@@ -1259,7 +1262,7 @@ private fun HistoryScreen(
         ) {
             items(done, key = { it.id }) { s ->
                 Surface(
-                    color = Color.White, shape = CardShape, shadowElevation = 2.dp,
+                    color = cc.surface, shape = CardShape, shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth().clickable { open(s) }
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1270,7 +1273,7 @@ private fun HistoryScreen(
                             )
                             Spacer(Modifier.weight(1f))
                             Surface(color = cc.jade10, shape = RoundedCornerShape(6.dp)) {
-                                Text(s.path, fontSize = 10.sp, color = cc.jadeDeep,
+                                Text(s.path, fontSize = 10.sp, color = if (cc.isDark) cc.jade else cc.jadeDeep,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
                         }

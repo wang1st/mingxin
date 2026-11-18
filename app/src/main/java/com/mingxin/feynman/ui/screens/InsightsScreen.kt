@@ -112,7 +112,7 @@ private fun DueInsightCard(
     var expanding by remember(item.id) { mutableStateOf(false) }
 
     Surface(
-        color = Color.White,
+        color = cc.surface,
         shape = RoundedCornerShape(14.dp),
         shadowElevation = 3.dp,
         border = BorderStroke(1.5.dp, cc.gold),
@@ -193,7 +193,7 @@ private fun CompactInsightCard(
     val cc = MingTheme.colors
     val isDone = item.status == "RESOLVED"
     Surface(
-        color = Color.White,
+        color = cc.surface,
         shape = RoundedCornerShape(12.dp),
         shadowElevation = 1.dp,
         border = BorderStroke(1.dp, cc.ink12),

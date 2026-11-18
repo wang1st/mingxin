@@ -85,12 +85,16 @@ fun MingXinTheme(dark: Boolean, content: @Composable () -> Unit) {
         primary = c.jade, onPrimary = Color(0xFF0F1512),
         background = c.paper, onBackground = c.ink,
         surface = c.surface, onSurface = c.ink,
-        secondary = c.gold, error = c.vermilion
+        surfaceVariant = c.paper, onSurfaceVariant = c.ink,
+        secondary = c.gold, error = c.vermilion, onError = Color(0xFF1A0E0B),
+        outline = c.ink.copy(alpha = 0.45f), outlineVariant = c.ink.copy(alpha = 0.20f)
     ) else lightColorScheme(
         primary = c.jade, onPrimary = Color.White,
         background = c.paper, onBackground = c.ink,
         surface = c.surface, onSurface = c.ink,
-        secondary = c.gold, error = c.vermilion
+        surfaceVariant = c.paper, onSurfaceVariant = c.ink,
+        secondary = c.gold, error = c.vermilion,
+        outline = c.ink.copy(alpha = 0.45f), outlineVariant = c.ink.copy(alpha = 0.20f)
     )
     CompositionLocalProvider(LocalColors provides c) {
         MaterialTheme(colorScheme = scheme, content = content)

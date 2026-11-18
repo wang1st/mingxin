@@ -69,7 +69,7 @@ fun ClaimScreen(
             ) {
                 Text(
                     "你也可以说：我其实讲通了，没有卡住。\n那就直接点最下面的「完成认领」。",
-                    fontSize = 12.sp, lineHeight = 19.sp, color = cc.jadeDeep,
+                    fontSize = 12.sp, lineHeight = 19.sp, color = if (cc.isDark) cc.jade else cc.jadeDeep,
                     modifier = Modifier.padding(12.dp)
                 )
             }
@@ -79,7 +79,7 @@ fun ClaimScreen(
             val num = i + 1
             val ok = selectedTrigger == qa.question
             Surface(
-                color = if (ok) cc.jade10 else Color.White,
+                color = if (ok) cc.jade10 else cc.surface,
                 shape = RoundedCornerShape(14.dp),
                 shadowElevation = if (ok) 4.dp else 1.dp,
                 border = BorderStroke(1.5.dp, if (ok) cc.jade else cc.ink12),
@@ -137,7 +137,7 @@ fun ClaimScreen(
                     Text("已认领 ${claimed.size} 个卡点", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = cc.jade)
                     claimed.forEach { c ->
                         Surface(
-                            color = Color.White, shape = RoundedCornerShape(10.dp),
+                            color = cc.surface, shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, cc.jade.copy(alpha = 0.3f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
