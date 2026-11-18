@@ -1,40 +1,82 @@
 package com.mingxin.feynman
+package com.mingxin.feynman
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-
-import com.mingxin.feynman.data.Exporter
-import com.mingxin.feynman.data.Scheduler
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
 import com.mingxin.feynman.data.AttemptEntity
+import com.mingxin.feynman.data.DoubtEntity
+import com.mingxin.feynman.data.Exporter
 import com.mingxin.feynman.data.QuestionEntity
 import com.mingxin.feynman.data.TopicGroup
 import com.mingxin.feynman.data.byId
-import com.mingxin.feynman.data.topicsOf
 import com.mingxin.feynman.data.sutrasOf
+import com.mingxin.feynman.data.topicsOf
 import com.mingxin.feynman.ui.LessonUi
-import com.mingxin.feynman.ui.QaItem
-import com.mingxin.feynman.ui.theme.*
-import com.mingxin.feynman.ui.screens.DoubtsScreen
 import com.mingxin.feynman.ui.LessonViewModel
+import com.mingxin.feynman.ui.QaItem
+import com.mingxin.feynman.ui.screens.DoubtsScreen
+import com.mingxin.feynman.ui.theme.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -82,9 +124,7 @@ class MainActivity : ComponentActivity() {
 
                 if (!ready) {
                     LoadingScreen()
-                    return@setContent
-                }
-
+                } else {
                 MainUI(
                     page = page,
                     navController = navController,
@@ -109,7 +149,6 @@ class MainActivity : ComponentActivity() {
                     onClearError = vm::clearError,
                     onSpeech = { phrase -> speak(phrase) },
                     onToggleDoubt = vm::toggleDoubt,
-                    onOpenDoubtSource = vm::openDoubtSource,
                     onReviewDoubt = vm::reviewDoubt,
                     onExport = { kind ->
                         lifecycleScope.launch {
@@ -127,6 +166,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 )
+                }
             }
         }
     }
