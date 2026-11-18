@@ -933,7 +933,6 @@ private fun QuestionHero(lesson: Lesson) {
             )
         } else {
             Text(
-                fontFamily = Serif,
                 fontSize = if (compact) 18.sp else 21.sp,
                 fontWeight = FontWeight.Bold, color = Ink
             )
