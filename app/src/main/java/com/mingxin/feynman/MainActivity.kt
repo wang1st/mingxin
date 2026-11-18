@@ -109,6 +109,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when (page) {
+                    "topic" -> page = "browse"
+                    "browse", "lesson", "doubts", "history", "settings" -> page = "home"
+                    else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                }
+                error = ""
+            }
+        })
         QuestionBank.load(this)
         hasApiKey = secrets.hasKey()
         current = runCatching { Lesson.fromJson(JSONObject(prefs.getString("active", "{}") ?: "{}")) }.getOrDefault(Lesson())
@@ -1442,7 +1452,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen:
 @Composable
 private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
     Surface(
-        color = Color.White, shape = BtnShape,
+        color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 2.dp,
         border = BorderStroke(1.dp, if (d.resolved) Ink12 else Gold.copy(alpha = 0.5f)),
         modifier = Modifier.fillMaxWidth().clickable { onToggle(d) }
     ) {
