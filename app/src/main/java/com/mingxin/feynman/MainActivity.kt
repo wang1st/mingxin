@@ -45,6 +45,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.NavHost
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,8 +142,9 @@ class MainActivity : ComponentActivity() {
                 error = Vermilion
             )) {
                 val navController = androidx.navigation.compose.rememberNavController()
+                // composable/NavHost 用 FQN 调用避免导入冲突
                 openLessonFn = { navController.navigate("lesson") { launchSingleTop = true } }
-                val backStackEntry by androidx.navigation.compose.currentBackStackEntryAsState(navController)
+                val backStackEntry by navController.currentBackStackEntryFlow.collectAsState(initial = null)
                 val page = backStackEntry?.destination?.route ?: "home"
                 MainUI(
                     page = page, navController = navController, lesson = current, history = history, busy = busy,
@@ -568,7 +571,7 @@ private fun MainUI(
                     )
                 }
             }
-            androidx.navigation.compose.NavHost(
+            NavHost(
                 navController = navController,
                 startDestination = "home",
                 modifier = Modifier.fillMaxSize()
