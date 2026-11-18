@@ -25,6 +25,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -440,6 +442,19 @@ class MainActivity : ComponentActivity() {
 /*  Scaffold, navigation and home                                     */
 /* ------------------------------------------------------------------ */
 
+/** 应用内自处理的右滑返回：不依赖系统 back dispatch（MIUI 手势对该链路支持有坑）。 */
+private fun Modifier.swipeBack(enabled: Boolean, onBack: () -> Unit): Modifier =
+    this.pointerInput(enabled) {
+        if (!enabled) return@pointerInput
+        var acc = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { acc = 0f },
+            onHorizontalDrag = { _, dragAmount -> acc += dragAmount },
+            onDragEnd = { if (acc > 180f) onBack() },
+            onDragCancel = { acc = 0f }
+        )
+    }
+
 @Composable
 private fun NavEntry(
     key: String, label: String, icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -509,6 +524,14 @@ private fun MainUI(
         )
     }
 
+    val goBack: () -> Unit = {
+        when (page) {
+            "topic" -> onNavigate("browse")
+            "browse", "lesson", "doubts", "history", "settings" -> onNavigate("home")
+            else -> {}
+        }
+    }
+
     Scaffold(
         topBar = {
             if (page == "lesson" || page == "topic" || page == "browse") TopAppBar(
@@ -553,7 +576,12 @@ private fun MainUI(
         },
         containerColor = Paper
     ) { inset ->
-        Column(Modifier.fillMaxSize().padding(inset)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(inset)
+                .swipeBack(enabled = page != "home", onBack = goBack)
+        ) {
             if (error.isNotBlank() && page != "lesson") {
                 Surface(color = Vermilion12, modifier = Modifier.fillMaxWidth()) {
                     Text(
