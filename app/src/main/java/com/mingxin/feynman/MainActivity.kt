@@ -50,7 +50,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,8 +90,6 @@ private val Ink8 = Ink.copy(alpha = 0.08f)
 private val Jade10 = Jade.copy(alpha = 0.10f)
 private val Gold12 = Gold.copy(alpha = 0.12f)
 private val Vermilion12 = Vermilion.copy(alpha = 0.12f)
-
-private val Serif = FontFamily.Serif
 
 class MainActivity : ComponentActivity() {
     private val prefs by lazy { getSharedPreferences("mingxin_lesson", MODE_PRIVATE) }
@@ -484,7 +481,7 @@ private fun MainUI(
     if (showCustom) {
         AlertDialog(
             onDismissRequest = { showCustom = false },
-            title = { Text("自定义课题", fontFamily = Serif) },
+            title = { Text("自定义课题") },
             text = {
                 OutlinedTextField(
                     value = customDraft, onValueChange = { customDraft = it },
@@ -508,7 +505,7 @@ private fun MainUI(
                 title = {
                     Text(
                         if (page == "lesson") "费曼课堂" else "明心",
-                        fontFamily = Serif, fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold
                     )
                 },
                 navigationIcon = {
@@ -627,7 +624,7 @@ private fun HomeScreen(
         val target = pendingStart
         AlertDialog(
             onDismissRequest = { confirmAbandon = false; pendingStart = null },
-            title = { Text("开始新题？", fontFamily = Serif) },
+            title = { Text("开始新题？") },
             text = { Text("有一节未完成的研习（${active.topic}），开始新题将放弃它。") },
             confirmButton = {
                 TextButton(onClick = {
@@ -655,7 +652,7 @@ private fun HomeScreen(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("${greeting()}，欢迎回来", fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                        color = Ink, fontFamily = Serif, maxLines = 1)
+                        color = Ink, maxLines = 1)
                     Text("今日也来讲一课", fontSize = 13.sp, color = Ink70, maxLines = 1)
                 }
                 if (!hasKey) {
@@ -704,7 +701,7 @@ private fun HomeScreen(
                             DifficultyDots(next.difficulty, Color.White)
                         }
                         Text(
-                            next.question, fontFamily = Serif, fontSize = 18.sp, lineHeight = 26.sp,
+                            next.question, fontSize = 18.sp, lineHeight = 26.sp,
                             fontWeight = FontWeight.Bold, color = Color.White
                         )
                         if (next.anchor.isNotBlank()) {
@@ -741,7 +738,7 @@ private fun HomeScreen(
         }
 
         item {
-            Text("快捷研习", fontFamily = Serif, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("快捷研习", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Ink)
         }
 
         item {
@@ -786,7 +783,7 @@ private fun BrowseScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text("自由选题", fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp,
+            Text("自由选题", fontSize = 20.sp, lineHeight = 26.sp,
                 fontWeight = FontWeight.Bold, color = Ink)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -845,7 +842,7 @@ private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
         item {
             Text(
                 "${group.sutra} · ${group.topic}",
-                fontFamily = Serif, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink
+                fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink
             )
             Text("选一道题，用自己的话先讲给 AI 学生听", color = Ink70, fontSize = 13.sp,
                 modifier = Modifier.padding(top = 4.dp))
@@ -929,7 +926,6 @@ private fun QuestionHero(lesson: Lesson) {
         if (lesson.prompt.isNotBlank()) {
             Text(
                 lesson.prompt,
-                fontFamily = Serif,
                 fontSize = if (compact) 18.sp else 21.sp,
                 fontWeight = FontWeight.Bold,
                 lineHeight = if (compact) 26.sp else 30.sp,
@@ -937,7 +933,6 @@ private fun QuestionHero(lesson: Lesson) {
             )
         } else {
             Text(
-                lesson.topic,
                 fontFamily = Serif,
                 fontSize = if (compact) 18.sp else 21.sp,
                 fontWeight = FontWeight.Bold, color = Ink
@@ -962,7 +957,7 @@ private fun RoleAvatar(char: String, bg: Color, textColor: Color = Color.White) 
             .background(bg),
         contentAlignment = Alignment.Center
     ) {
-        Text(char, color = textColor, fontSize = 13.sp, fontFamily = Serif, fontWeight = FontWeight.Bold)
+        Text(char, color = textColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1053,11 +1048,29 @@ private fun LessonScreen(
         if (count > 0) listState.animateScrollToItem(count - 1)
     }
     val scope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val scrollToBottom: () -> Unit = {
         scope.launch {
-            kotlinx.coroutines.delay(300) // 等键盘动画落定再滚，滚的才是收缩后的真实底部
+            kotlinx.coroutines.delay(300)
             val count = listState.layoutInfo.totalItemsCount
             if (count > 0) listState.animateScrollToItem(count - 1)
+        }
+    }
+    // 键盘可见期间持续把信息流钉在底部：最后一条永远贴输入框上沿
+    LaunchedEffect(Unit) {
+        var wasVisible = false
+        androidx.compose.runtime.snapshotFlow {
+            androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0
+        }.collect { visible ->
+            if (visible && !wasVisible) {
+                kotlinx.coroutines.delay(150)
+                while (androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density) > 0) {
+                    val c = listState.layoutInfo.totalItemsCount
+                    if (c > 0) listState.scrollToItem(c - 1)
+                    kotlinx.coroutines.delay(100)
+                }
+            }
+            wasVisible = visible
         }
     }
     val editable = lesson.stage in listOf("INTRO", "ASK", "REWRITE")
@@ -1132,7 +1145,7 @@ private fun LessonScreen(
                                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("下一题 · ${nq.sutra}", color = GoldText, fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold, maxLines = 1)
-                                    Text(nq.question, fontFamily = Serif, fontSize = 16.sp, lineHeight = 23.sp,
+                                    Text(nq.question, fontSize = 16.sp, lineHeight = 23.sp,
                                         fontWeight = FontWeight.Bold, color = Ink, maxLines = 2,
                                         overflow = TextOverflow.Ellipsis)
                                     Button(
@@ -1406,7 +1419,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen:
             verticalArrangement = Arrangement.Center) {
             Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Jade, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(12.dp))
-            Text("尚无疑点", fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("尚无疑点", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("课堂评估中发现的薄弱处会自动沉淀到这里。", fontSize = 13.sp, color = Ink70)
         }
     } else {
@@ -1418,7 +1431,7 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen:
             item {
                 Text(
                     "未决疑点 ${open.size}",
-                    fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = Ink
+                    fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = Ink
                 )
                 if (open.isEmpty()) {
                     Text("全部消除，境界日进。", color = Jade, fontSize = 13.sp)
@@ -1488,7 +1501,7 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExpor
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("研习笔记", fontFamily = Serif, fontSize = 20.sp, lineHeight = 26.sp,
+            Text("研习笔记", fontSize = 20.sp, lineHeight = 26.sp,
                 fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
             if (history.isNotEmpty()) {
                 OutlinedButton(
@@ -1507,7 +1520,7 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExpor
             verticalArrangement = Arrangement.Center) {
             Icon(Icons.Default.MenuBook, contentDescription = null, tint = Jade, modifier = Modifier.size(44.dp))
             Spacer(Modifier.height(12.dp))
-            Text("尚无研习笔记", fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("尚无研习笔记", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("完成一次费曼课堂后，这里会保存你的回答与评估。", fontSize = 13.sp, color = Ink70)
         }
     } else {
@@ -1521,7 +1534,7 @@ private fun HistoryScreen(history: List<Lesson>, open: (Lesson) -> Unit, onExpor
                     color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().clickable { open(item) }
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(item.topic, fontFamily = Serif, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+                        Text(item.topic, fontWeight = FontWeight.Bold, fontSize = 16.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item.prompt.isNotBlank()) {
                             Text(item.prompt, fontSize = 13.sp, color = Ink70,
@@ -1551,7 +1564,7 @@ private fun SettingsScreen(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("删除密钥", fontFamily = Serif) },
+            title = { Text("删除密钥") },
             text = { Text("将删除本机加密保存的 API Key，删除后需重新配置才能研习。") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; delete() }) { Text("删除", color = Vermilion) }
@@ -1567,7 +1580,7 @@ private fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("DeepSeek API", fontFamily = Serif, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("DeepSeek API", fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = Ink)
             Spacer(Modifier.height(4.dp))
             Text(
                 if (hasKey) "状态：已保存加密密钥" else "状态：尚未配置",
