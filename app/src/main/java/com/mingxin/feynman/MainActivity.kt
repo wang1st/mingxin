@@ -189,6 +189,7 @@ class MainActivity : ComponentActivity() {
             anchor = q.anchor, edition = q.edition
         )
         persistActive()
+        openLessonFn?.invoke()
     }
 
     private fun startCustom(topic: String) {
@@ -887,7 +888,8 @@ private fun TopicScreen(group: TopicGroup, onStart: (BankQuestion) -> Unit) {
         }
         items(group.questions, key = { it.id }) { q ->
             Surface(
-                color = Color.White, shape = CardShape, shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().clickable { onStart(q) }
+                color = Color.White, shape = CardShape, shadowElevation = 3.dp,
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !inFlight) { onStart(q) }
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
