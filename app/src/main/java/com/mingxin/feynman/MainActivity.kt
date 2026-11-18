@@ -550,7 +550,7 @@ private fun HomeScreen(
         if (inFlight) {
             item {
                 Surface(
-                    color = if (cc.isDark) cc.jadeDeep else cc.jade, shape = CardShape, shadowElevation = 4.dp,
+                    color = cc.jadeCard, shape = CardShape, shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth().clickable { onResume() }
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -575,7 +575,7 @@ private fun HomeScreen(
         if (next != null && !inFlight) {
             item {
                 Surface(
-                    color = if (cc.isDark) cc.jadeDeep else cc.jade, shape = CardShape, shadowElevation = 4.dp,
+                    color = cc.jadeCard, shape = CardShape, shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1482,7 +1482,8 @@ private fun SettingsScreen(
 private fun StatCell(label: String, value: String, modifier: Modifier = Modifier) {
     val cc = MingTheme.colors
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = cc.jade)
-        Text(label, fontSize = 11.sp, color = cc.ink70, maxLines = 1)
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = cc.jade)
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 10.sp, color = cc.ink70, maxLines = 1, softWrap = false)
     }
 }

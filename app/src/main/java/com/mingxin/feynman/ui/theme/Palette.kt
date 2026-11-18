@@ -26,6 +26,7 @@ data class MingXinColors(
     val goldText: Color,
     val vermilion: Color,
     val onJadeSub: Color,   // 玉色底上的次级文字
+    val jadeCard: Color,    // 玉色大卡片底色（深浅模式不同：深色要更沉）
     val isDark: Boolean
 ) {
     val ink70 get() = ink.copy(alpha = 0.70f)
@@ -48,6 +49,7 @@ val LightColors = MingXinColors(
     goldText = Color(0xFF84652F),
     vermilion = Color(0xFFB4432F),
     onJadeSub = Color(0xFFBFD8CC),
+    jadeCard = Color(0xFF3B7965),
     isDark = false
 )
 
@@ -62,7 +64,8 @@ val DarkColors = MingXinColors(
     gold = Color(0xFFC9A46A),
     goldText = Color(0xFFD4B47E),
     vermilion = Color(0xFFE07A62),
-    onJadeSub = Color(0xFF9FC4B2),
+    onJadeSub = Color(0xFFA8CDBA),
+    jadeCard = Color(0xFF2B5C4B),
     isDark = true
 )
 
