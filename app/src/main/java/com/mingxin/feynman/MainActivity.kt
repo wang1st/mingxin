@@ -168,7 +168,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onDeleteKey = { secrets.delete(); hasApiKey = false },
                     onSpeech = { phrase -> speak(phrase) },
-                    onOpenHistory = { selected -> current = selected; navigateLesson() },
+                    onOpenHistory = { selected -> current = selected; persistActive(); navigateLesson() },
                     doubts = doubts,
                     onExportNotes = { exportNotes() },
                     onToggleDoubt = ::toggleDoubt,
@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
     private fun startCustom(topic: String) {
         current = Lesson(topic = topic)
         persistActive()
+        openLessonFn?.invoke()
     }
 
     private var openLessonFn: (() -> Unit)? = null
@@ -1480,10 +1481,11 @@ private fun DoubtsScreen(doubts: List<Doubt>, onToggle: (Doubt) -> Unit, onOpen:
 
 @Composable
 private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion) -> Unit) {
+    val source = QuestionBank.byId(d.questionId)
     Surface(
         color = Color.White, shape = RoundedCornerShape(12.dp), shadowElevation = 2.dp,
         border = BorderStroke(1.dp, if (d.resolved) Ink12 else Gold.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth().clickable { onToggle(d) }
+        modifier = Modifier.fillMaxWidth().clickable { if (source != null && !d.resolved) onOpen(source) }
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -1503,12 +1505,20 @@ private fun DoubtCard(d: Doubt, onToggle: (Doubt) -> Unit, onOpen: (BankQuestion
                     fontSize = 12.sp, color = Ink70, maxLines = 1
                 )
             }
-            val source = QuestionBank.byId(d.questionId)
             if (source != null) {
-                IconButton(onClick = { onOpen(source) }, modifier = Modifier.size(44.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "去研习此题",
-                        tint = Jade, modifier = Modifier.size(18.dp))
-                }
+                Text("去研习", color = Jade, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable { onOpen(source) })
+            } else {
+                Text(if (d.resolved) "已消除" else "未决", color = Ink70, fontSize = 12.sp)
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = { onToggle(d) }, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    if (d.resolved) Icons.Default.Refresh else Icons.Default.Check,
+                    contentDescription = if (d.resolved) "标记为未决" else "标记为已消除",
+                    tint = if (d.resolved) Ink70 else Jade,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }
