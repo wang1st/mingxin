@@ -23,8 +23,8 @@ android {
         applicationId = "com.mingxin.feynman"
         minSdk = 26
         targetSdk = 35
-        versionCode = 53
-        versionName = "0.9.6"
+        versionCode = 54
+        versionName = "0.9.7"
     }
 
     compileOptions {

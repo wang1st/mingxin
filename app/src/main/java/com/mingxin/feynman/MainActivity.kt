@@ -591,7 +591,7 @@ private fun HomeScreen(
                             PATH_OPTIONS.take(4).forEach { p ->
                                 val sel = p == selectedPath
                                 Surface(
-                                    color = if (sel) Color.White else Color.White.copy(alpha = 0.14f),
+                                    color = if (sel) Color.White else Color.White.copy(alpha = if (cc.isDark) 0.22f else 0.14f),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.clickable { onPathChange(p) }
                                 ) {
@@ -679,7 +679,7 @@ private fun BrowseScreen(
             questions.sutrasOf().forEach { name ->
                 val sel = name == sutra
                 Surface(
-                    color = if (sel) cc.jade else Color.White,
+                    color = if (sel) cc.jade else cc.surface,
                     shape = RoundedCornerShape(18.dp),
                     border = if (sel) null else BorderStroke(1.dp, cc.ink12),
                     modifier = Modifier.clickable { sutra = name }
